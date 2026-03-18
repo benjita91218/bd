@@ -1,0 +1,15 @@
+drop DATABASE IF EXISTS tienda;
+CREATE DATABASE tienda;
+USE tienda;
+
+CREATE TABLE provincias (id_provincia INT PRIMARY KEY, nombre_provincia VARCHAR(50));
+
+CREATE TABLE ciudades (id_ciudad INT PRIMARY KEY, nombre_ciudad VARCHAR(50), id_provincia INT,FOREIGN KEY (id_provincia) REFERENCES provincias(id_provincia));
+
+CREATE TABLE clientes (id_cliente INT PRIMARY KEY,nombre VARCHAR(50),apellido VARCHAR(50),email VARCHAR(100),telefono VARCHAR(20),direccion VARCHAR(100),id_ciudad INT,FOREIGN KEY (id_ciudad) REFERENCES ciudades(id_ciudad));
+
+CREATE TABLE productos (id_producto INT PRIMARY KEY,nombre_producto VARCHAR(50),descripcion VARCHAR(100),precio DECIMAL(10,2),stock INT);
+
+CREATE TABLE compras (id_compra INT PRIMARY KEY,fecha_compra DATE,total DECIMAL(10,2),id_cliente INT,FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente));
+
+CREATE TABLE detalle_compra (id_detalle INT PRIMARY KEY,id_compra INT,id_producto INT,cantidad INT,subtotal DECIMAL(10,2),FOREIGN KEY (id_compra) REFERENCES compras(id_compra),FOREIGN KEY (id_producto) REFERENCES productos(id_producto));
