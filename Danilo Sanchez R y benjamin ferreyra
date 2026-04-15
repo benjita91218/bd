@@ -1,0 +1,19 @@
+create view clientes_oriundo as select nombre, apellido, ciudad from clientes
+
+select * from clientes_oriundo where ciudad = 'santa fe'
+
+create view ciudades_provincias as select ciudad, provincia from ciudades
+
+create view mas_de_una as select provincia, count(*) as cantidad from ciudades group by provincia having count(*) > 1
+
+create view sin_stock as select * from productos where stock = 0
+
+select max(precio), min(precio) from sin_stock
+
+create view clientes_compra as select distinct c.nombre, c.apellido from clientes c join compras o on c.id = o.cliente_id
+
+create or replace view clientes_compra as select nombre, apellido, sum(cantidad) from clientes join compras on clientes.id = compras.cliente_id group by nombre, apellido
+
+create or replace view clientes_compra as select nombre, apellido, sum(cantidad), sum(total) from clientes join compras on clientes.id = compras.cliente_id group by nombre, apellido
+
+create view nunca_comprados as select p.nombre from productos p left join compras o on p.id = o.producto_id where o.producto_id is null
