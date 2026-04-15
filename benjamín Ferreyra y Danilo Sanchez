@@ -1,0 +1,20 @@
+create view nombre_cliente as select nombre, apellido from clientes;
+
+insert into nombre_cliente (nombre, apellido) values ('TuNombre', 'TuApellido');
+
+drop view nombre_cliente;
+
+create view productos_bic as select * from productos where nombre_producto like '%bic%';
+
+create view porteños as select * from clientes where provincia = 'buenos aires' or provincia = 'ciudad autonoma';
+
+create or replace view porteños as select * from clientes where provincia = 'ciudad autonoma';
+
+create view productos_caros as select * from productos where precio > 100;
+
+create view clientes_ciudad as select nombre, apellido, ciudad from clientes;
+
+create view ubicacion_ciudades as select ciudad, provincia from ciudades;
+
+create view ultima_compra_clientes as select nombre, apellido, max(fecha_compra) as ultima_fecha from clientes join 
+compras on clientes.id = compras.cliente_id group by nombre, apellido;
