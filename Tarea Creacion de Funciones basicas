@@ -1,0 +1,92 @@
+1)
+DELIMITER //
+CREATE FUNCTION precio_con_iva(precio decimal(10,2))
+RETURNS decimal(10,2)
+DETERMINISTIC begin RETURN precio*1.21;
+END//
+DELIMITER ;
+
+2)
+CREATE FUNCTION doble_stock(stock int)
+RETURNS int
+DETERMINISTIC BEGIN RETURN stock*2;
+END;
+
+3)
+CREATE FUNCTION nombre_completo(nombre varchar(50), apellido varchar(50))
+RETURNS varchar(100)
+DETERMINISTIC BEGIN 
+RETURN concat nombre_completo(nombre, "," , apellido);
+END;
+
+4)
+CREATE FUNCTION estado_stock(stock int)
+returns varchar(20)
+DETERMINISTIC BEGIN
+if stock=0 THEN RETURN "sin stock";
+ELSEIF stock<20 THEN RETURN "bajo stock";
+ELSE RETURN "disponible";
+end IF;
+END;
+
+5)
+CREATE FUNCTION clasificar_precio(precio decimal(10,2))
+returns varchar(20)
+DETERMINISTIC BEGIN
+if precio<100 THEN RETURN "barato";
+ELSEIF precio<=500 THEN RETURN "medio";
+ELSE precio>500 then RETURN "caro";
+end IF;
+END;
+
+6)
+create function aplicar_descuento(precio decimal(10,2), porcentaje decimal(5,2))}
+RETURNS decimal(10,2)
+deterministic BEGIN 
+RETURN precio-(precio*porcentaje/100);
+END;
+
+7)
+CREATE FUNCTION obtener_precio(id_producto INT)
+RETURNS decimal(10,2)
+READS SQL DATA
+BEGIN
+   DECLARE p DECIMAL(10,2);
+
+   SELECT precio
+   INTO p
+   FROM productos
+   WHERE productos.id_producto = id_producto;
+
+   RETURN p;
+END;
+
+8)
+create function obtener_stock(id_producto int)
+RETURNS INT
+READS SQL DATA
+BEGIN
+   DECLARE s INT;
+   select stock into s from productos WHERE productos.id_producto=id_producto;
+   RETURN s;
+END;
+
+9)
+create function nombre_cliente(apellido varchar(50), nombre varchar(50))
+RETURNS varchar(100)
+READS SQL DATA
+BEGIN
+   DECLARE n varchar(100);
+   select concat(apellido,",", nombre) into n FROM clientes WHERE clietes.id_cliente=id_cliente;
+   RETURN n;
+END;
+
+10)
+CREATE function marca_producto(id_producto int)
+RETURNS varchar(50)
+READS SQL DATA
+BEGIN
+   DECLARE m varchar(50);
+   select marca into m from productos WHERE producto.id_producto=id_producto
+   RETURN m;
+END;
