@@ -1,0 +1,130 @@
+ create function cantidad_total_comprada(id_producto int)
+returns int
+begin
+declare int total;
+select sum(cantidad) into total from compras where compras.id_producto= id_producto;
+return total;
+end;
+
+create function cantidad_compras_cliente(id_cliente int)
+returns int
+begin
+declare int total;
+select count(*) into total from compras where compras.id_cliente=id_cliente;
+return total;
+end;
+
+create function ultima_compra(id_cliente int)
+returns date
+begin
+declare fecha_ult(date);
+select max(fecha) into fecha_ult from compras where compras.id_cliente=id_cliente;
+return fecha_ult;
+end;
+
+create function dias_ultima_compra(id_cliente int)
+returns int
+begin
+declare dias int;
+select datediff(curdate(), max(fecha)) into dias from compras where compras.id_cliente=id_cliente;
+return dias;
+end;
+
+create function total_gastado(id_cliente int)
+returns decimal(10,2)
+begin
+declare total decimal(10,2);
+select sum(total) into total from compras where compra.id_cliente=id_cliente;
+return total;
+end;
+
+create function cliente_premium(id_cliente int)
+returns varchar(20)
+begin
+declare gasto decimal(10,2);
+select sum(total) into gasto from compras where compra.id_cliente=id_cliente;
+if gasto>5000 then return "premium";
+else return "normal";
+end if;
+end;
+
+create function provincia_cliente(id_cliente int)
+returns varchar(50)
+begin 
+declare provincia varchar(50);
+select p.nombre into provincia from clientes c join provincias p on c.id_provincia=p.id where c.id=id_cliente;
+return provincia;
+end;
+
+create function region_cliente(id_cliente int)
+returns varchar(50)
+begin
+declare region varchar(50);
+select p.region into region from clientes c join provincias p on c.id_provincia=p.id where c.id=id_cliente;
+return region;
+end;
+
+create function clientes_por_provincia(id_provincia int)
+returns int
+begin total int;
+select count(*) into totall from clientes where clientes.id_provincia=id_provincia;
+return total;
+end;
+
+create function producto_mas_vendido()
+returns varchar(100)
+begin 
+declare nombre_producto varchar(100);
+select p.nombre into nombre_producto from productos p join compras c on p.id = c.id_producto group by p.id, p.nombre order by
+sum(c.cantidad) desc limit 1;
+return nombre_producto;
+end;
+
+create function producto_menos_vendido()
+returns varchar(100)
+begin 
+declare nombre_producto varchar(100);
+select p.nombre into nombre_producto from productos p join compras c on p.id = c.id_producto GROUP BY p.id, p.nombre order by 
+sum(c.cantidad) asc
+limit 1;
+return nombre_producto;
+end;
+
+create function promedio_precios()
+returns decimal(10,2)
+begin
+declare promedio decimal(10,2);
+select abg(precio) into promedio from productos;
+return promedio;
+end;
+
+create function comparar_promedio(id_producto int)
+returns varchar(30)
+begin
+declare precio_producto decimal(10,2);
+declare promedio decimal (10,2);
+select precio into precio_producto from productos where id = id_producto;
+select avg(precio)into promedio from productos;
+if precio_producto>promedio then return "Arriba del promedio";
+else return "Debajo del promedio";
+end if;
+end;
+
+create function alerta_stock(id_producto int)
+returns varchar(30)
+begin
+declare stock actual int;
+select stock into stock_actual from productos where id = id_producto;
+if stock_actual=0 then return "REPOSICION URGENTE";
+elseif stock_actual<20 then return "STOCK BAJO";
+else return "OK";
+end if;
+end;
+
+create function cantidad_productos_cliente(id_cliente int)
+returns int
+begin 
+declare total int;
+select sum(cantidad) into total from compras where compras.id_cliente=id_cliente;
+return total;
+end;
