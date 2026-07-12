@@ -1,0 +1,27 @@
+delimiter //
+create procedure agregar_provincia(in p_nombre varchar(50), in p_region varchar(50))
+begin
+insert into provincias(nombre, region)
+values(p_nombre, p_region);
+end//
+delimiter;
+
+delimiter//
+create procedure Agregar_ciudad(in p_nombre varchar(50), in p_id_provincia int)
+begin
+insert into ciudad(nombre, id_provincia)
+values(p_nombre, p_id_provincia);
+end//
+delimiter;
+
+delimiter//
+create procedure Agregar_cliente(in p_id_cliente int, in p_nombre varchar(50), in p_apellido varchar(50))
+begin
+insert into cliente(id_cliente, nombre, apellido)
+values(p_id_cliente, p_nombre, p_apellido);
+end//
+delimiter;
+
+delimiter//
+create procedure Agregar_producto(in p_id_producto int, in p_nombre_producto varchar(100), in p_precio_producto decimal(10,2), in
+p_stock int)
