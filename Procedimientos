@@ -23,5 +23,58 @@ end//
 delimiter;
 
 delimiter//
-create procedure Agregar_producto(in p_id_producto int, in p_nombre_producto varchar(100), in p_precio_producto decimal(10,2), in
-p_stock int)
+create procedure Agregar_producto(in p_id_producto int, in p_nombre_producto varchar(100), in p_descripcion varchar(200),in 
+p_precio_producto decimal(10,2), inp_stock int)
+begin 
+insert into producto(id_producto, nombre_producto, descripcion, precio_producto,stock)
+values(p_id_producto, p_nombre_producto, p_descripcion, p_precio_producto, p_stock);
+end//
+delimiter;
+
+delimiter//
+create procedure Actualizar_precio(in p_id_producto int, in p_nuevo_precio decimal(10,2))
+begin
+update producto
+set precio= p_nuevo_precio
+where id_producto=p_id_producto;
+end//
+delimiter;
+
+delimiter//
+create procedure actualizar_stock(in p_id_producto int, in p_nuevo_stock int)
+begin
+update producto
+set stock=p_nuevo_stock
+where id_producto=p_id_producto;
+end//
+delimiter;
+
+delimiter//
+create procedure eliminar_cliente(in p_id_cliente int)
+begin
+delete from cliente
+where id_cliente=p_id_cliente;
+end//
+delimiter;
+
+delimiter//
+create procedure mostrar_productos()
+begin
+select * from productos;
+end//
+delemiter;
+
+delimiter//
+create procedure buscar_ciudad(in p_nombre_ciudad varchar(100))
+begin
+select * from ciudades where nombre_ciudad=p_nombre_ciudad;
+end//
+delimiter;
+
+delimiter//
+create procedure ciudades_por_provincia(IN p_nombre_provincia varchar(50))
+begin
+select ciudades.nombre_ciudad from ciudades inner join provincias on ciudades.id_provincia = provincias.id_provincia where 
+provincias.nombre_provincia = p_nombre_provincia;
+end//
+delimiter;
