@@ -1,0 +1,138 @@
+delimiter//
+create procedure eliminar_cliente_sin_compras()
+begin 
+delete from clientes where id_cliente not in(select id_cliente from compras);
+end//
+delimiter;
+
+delimiter//
+create procedure agregar_producto(in p_id_producto int, in p_nombre_producto varchar(100), in p_descripcion varchar(200),in 
+p_precio_producto decimal(10,2), inp_stock int)
+begin
+if p_precio>0 then
+insert into productos (id_producto, nombre_producto, descripcion, precio, stock)
+values (p_id_producto, p_nombre_producto, p_descripcion, p_precio, p_stock);
+end if;
+end//
+delimiter;
+
+delimiter//
+create procedure compra_entre_fechas(in p_fecha_inicio date, in p_fecha_fin date)
+begin
+select * compras where fecha_compra between p_fecha_inicio and p_fecha_fin;
+end//
+delimiter;
+
+delimiter//
+create procedure eliminar_productos_sin_stock()
+begin
+delete from productos where stock = 0;
+end //
+delimiter;
+
+delimiter//
+create procedure registrar_compra(IN p_id_compra INT, IN p_total DECIMAL(10,2), IN p_id_cliente INT)
+begin
+insert into compras (id_compra, fecha_compra, total, id_cliente)
+values (p_id_compra, CURDATE(), p_total, p_id_cliente);
+end //
+delimiter;
+
+delimiter//
+create procedure producto_mas_caro()
+begin
+select * from productos where precio=(select max (precio) from productos);
+end//
+delimiter;
+
+delimiter//
+create procedure reducir_stock(in p_id_producto int, in p_cantidad int)
+begin
+update productos
+set stock=stock - p_cantidad
+where id_producto=p_id_producto;
+end//
+delimiter;
+
+delimiter//
+create procedure eliminar_provincias()
+begin
+delete from provincias where id_provincia not in (select id_provincia from ciudades);
+end//
+delimiter;
+
+delimiter//
+create procedure compras_clientes(in p_id_cliente int)
+begin
+select * from compras where id_cliente=p_id_cliente;
+end//
+delimiter;
+
+delimiter//
+create procedure agregar_provincia(in p_id_provincia int, in p_nombre_provincia varchar(50))
+begin
+insert into provincias(id_provincia, nombre_provincia)
+values(p_id_provincia, p_nombre_provincia);
+end//
+delimiter;
+
+delimiter//
+create procedure cambiar_precio(in p_id_producto int, in p_nuevo_precio decimal(10,2))
+begin
+update productos set precio=p_nuevo_precio where id_producto=p_id_producto;
+end//
+delimiter;
+
+delimiter//
+create procedure eliminar_compras_anteriores(in p_fecha date)
+begin
+delete from compras where fecha_compra<p_fecha;
+end//
+delimiter;
+
+delimiter//
+create procedure productos_menor_stock(in p_stock int)
+begin
+select * from productos where stock < p_stock;
+end//
+delimiter;
+
+delimiter//
+create procedure agregar_producto_stock(in p_id_producto int, in p_nombre_producto varchar(50),
+in p_descripcion varchar(100), in p_precio decimal(10,2), in p_stock int)
+begin
+insert into productos(id_producto, nombre_producto, decripcion, precio, stock)
+values(p_id_producto, p_nombre_producto, p_descripcion, p_precio, p_stock)
+end//
+delimiter;
+
+delimiter//
+create procedure eliminar_clientes_sinComprasDesde(in p_fecha date)
+begin
+delete from clientes where id_cliente not in(select id_cliente from compras where fecha_compra >= p_fecha);
+end//
+delimiter;
+
+delimiter//
+create procedure marcar_fuera_stock(in p_id_producto int)
+begin
+update productos set fuera_stock = true where id_producto=p_id_producto;
+end//
+delimiter;
+
+delimiter//
+create procedure registrar_compra_simple(in p_id_compra int, in p_fecha_compra date, in p_total 
+decimal(10,2), in p_id_cliente int)
+begin
+insert into compras(id_compra, fecha_compra,total,id_cliente)
+values(p_id_compra,p_fecha_compra, p_total, p_id_clinte)
+end//
+delimiter;
+
+delimiter//
+create procedure aumentar_precios_marca(in p_marca varcahr(50), in p_porcentaje decimal(5,2))
+begin
+update productos set precio=precio+(precio*p_porcentaje/100) where marca=p_marca;
+end//
+delimiter;
+
