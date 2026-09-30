@@ -1,0 +1,189 @@
+delimiter//
+create function region_cliente(p_id_cliente int)
+returns varchar(50)
+deterministic
+begin declare v_provincia varchar(50);
+set v_provincia=provincia_cliente(p_id_cliente);
+
+if v_provincia in ("buenos aires","la pampa","santa fe","cordoba","entre rios") then return "pampeana";
+
+elseif v=provincia in ("Mendoza","San Juan","San Luis") then return "cuyo";
+
+elseif v=provincia in ("Neuquén","Río Negro","Chubut","Santa Cruz","Tierra del Fuego") then return "patagonia";
+
+else return "norte argentino";
+
+end//
+delimiter;
+
+
+
+
+
+delimiter//
+create function nivel_cliente(p_id_cliente int)
+returns varchar(20)
+deterministic
+begin declare v_gasto decimal(10,2);
+
+select coalesce(sum(total),0) into v_gasto from compras where id_cliente = p_id_cliente;
+
+if v_gasto < 1000 then return "bronce";
+elseif v_gasto < 3000 then return "plata";
+elseif v_gasto < 5000 then return "oro";
+else return "platino";
+end if;
+
+end//
+delimiter;
+
+delimiter // 
+create procedure mostrar_objetos_nivel( in p_id_cliente int) 
+begin declare v_nivel varchar(20);
+
+set v_nivel = nivel_cliente(p_id_cliente);
+if v_nivel = 'bronce' then select * from objetos where precio <= 10; 
+elseif v_nivel = 'plata' then select * from objetos where precio <= 100; 
+elseif v_nivel = 'oro' then select * from objetos where precio <= 500;
+elseif v_nivel = 'platino' then select * from objetos where precio <= 500;
+end if; 
+end // 
+delimiter;
+
+
+
+
+
+
+delimiter //
+
+create function es_premium(p_id_cliente )
+returns boolean
+deterministic
+begindeclare v_gasto decimal(10,2);
+
+select coalesce(sum(total), 0) into v_gasto from compras where id_cliente = p_id_cliente;
+
+if v_gasto > 5000 then return true;
+else return false;
+end if;
+
+end//
+delimiter;
+
+delimiter//
+
+create function analisis_cliente(p_id_cliente int)
+returns varchar(200)
+deterministic
+begin
+    declare v_nombre varchar(100);
+    declare v_gasto decimal(10,2);
+    declare v_premium boolean;
+
+select concat(nombre, " " , apellido) into v_nombre from clientes where id_cliente = p_id_cliente;
+
+select coalesce(sum(total), 0) into v_gasto from compras where id_cliente = p_id_cliente;
+
+set v_premium = es_premium(p_id_cliente);
+
+if v_premium then return concat(v_nombre,"| Gasto: $" ,v_gasto, "| Premium");
+else return concat(v_nombre," | Gasto: $" ,v_gasto, "| No Premium");
+end if;
+
+end //
+delimiter ;
+
+
+
+
+
+delimiter // 
+create function alerta_stock(p_id_producto int)
+returns varchar(30) 
+deterministic 
+begin  declare v_stock int; 
+
+select stock into v_stock from productos where id_producto = p_id_producto; 
+    
+if v_stock = 0 then return "REPOSICION URGENTE"; 
+elseif v_stock < 20 then return 'STOCK BAJO'; 
+else return 'OK'; 
+end if; 
+
+end // 
+delimiter ;
+
+delimiter // 
+create function estado_producto(p_id_producto int) 
+returns varchar(200) 
+deterministic 
+begin 
+
+declare v_nombre varchar(50); 
+declare v_stock int; 
+declare v_vendidos int; 
+declare v_alerta varchar(30); 
+    
+select nombre_producto, stock into v_nombre, v_stock from productos where id_producto = p_id_producto; 
+    
+set v_alerta = alerta_stock(p_id_producto); 
+    
+select coalesce(sum(dc.cantidad), 0) into v_vendidos from detalle_compra dc where dc.id_producto = p_id_producto; 
+    
+return concat( "Producto: ", v_nombre, " | Vendidos: ", v_vendidos, " | Stock: ", v_stock, " | ", v_alerta ); 
+end // 
+delimiter ;
+
+
+
+
+
+
+
+
+delimiter // 
+create function tiene_largo_correcto(p_password varchar(255)) 
+returns boolean 
+determinitic 
+begin 
+return char_length(p_password) >= 8; 
+end// 
+delimiter;
+
+
+
+delimiter//
+create function tiene_numero(p_password varchar(255)) 
+returns boolean 
+deterministic 
+begin 
+return p_password regexp "[0-9]"; 
+end//
+delimiter;
+
+
+
+delimiter//
+create function tiene_caracter_especial(p_password varchar(255)) 
+returns boolean 
+deterministic 
+begin 
+return p_password regexp"[!%&$-]"; 
+end//
+delimiter;
+
+
+
+delimiter//
+create function es_password_valida(p_password varchar(255)) 
+returns varchar(30) 
+deterministic 
+begin
+
+if tiene_largo_correcto(p_password) and tiene_numero(p_password) and tiene_caracter_especial(p_password) then return "Contraseña Aceptada"; 
+else return "Contraseña Insegura"; 
+end if;
+
+end//
+delimiter;
