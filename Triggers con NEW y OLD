@@ -1,0 +1,356 @@
+USE biblioteca;
+
+/* =========================================================
+   TRIGGERS CON NEW Y OLD
+   ========================================================= */
+
+CREATE TABLE IF NOT EXISTS AuditoriaLibros (
+    AuditoriaID INT AUTO_INCREMENT PRIMARY KEY,
+    LibroID INT,
+    Titulo VARCHAR(255),
+    Accion VARCHAR(30),
+    Fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS AuditoriaTitulos (
+    AuditoriaID INT AUTO_INCREMENT PRIMARY KEY,
+    LibroID INT,
+    TituloAnterior VARCHAR(255),
+    TituloNuevo VARCHAR(255),
+    Fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS AuditoriaUsuarios (
+    AuditoriaID INT AUTO_INCREMENT PRIMARY KEY,
+    UsuarioID INT,
+    EmailAnterior VARCHAR(255),
+    EmailNuevo VARCHAR(255),
+    Fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS AutoresRespaldo (
+    RespaldoID INT AUTO_INCREMENT PRIMARY KEY,
+    AutorID INT,
+    Nombre VARCHAR(255),
+    Nacionalidad VARCHAR(255),
+    FechaEliminacion DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS LibrosRespaldo (
+    RespaldoID INT AUTO_INCREMENT PRIMARY KEY,
+    LibroID INT,
+    Titulo VARCHAR(255),
+    AutorID INT,
+    GeneroID INT,
+    AnioPublicacion INT,
+    ISBN VARCHAR(20),
+    FechaEliminacion DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DELIMITER $$
+
+
+
+
+
+-- 1. Registra la inserción de un libro.
+
+CREATE TRIGGER trg_auditar_libro_insertado
+AFTER INSERT ON Libros
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaLibros (LibroID, Titulo, Accion)
+    VALUES (NEW.LibroID, NEW.Titulo, 'INSERT');
+END$$
+
+
+
+
+-- 2. Guarda el título anterior y el nuevo cuando se modifica.
+
+CREATE TRIGGER trg_auditar_titulo_modificado
+AFTER UPDATE ON Libros
+FOR EACH ROW
+BEGIN
+    IF NOT (NEW.Titulo <=> OLD.Titulo) THEN
+        INSERT INTO AuditoriaTitulos
+            (LibroID, TituloAnterior, TituloNuevo)
+        VALUES (OLD.LibroID, OLD.Titulo, NEW.Titulo);
+    END IF;
+END$$
+
+
+
+
+
+-- 3. Registra los cambios de email.
+
+CREATE TRIGGER trg_auditar_email_modificado
+AFTER UPDATE ON Usuarios
+FOR EACH ROW
+BEGIN
+    IF NOT (NEW.Email <=> OLD.Email) THEN
+        INSERT INTO AuditoriaUsuarios
+            (UsuarioID, EmailAnterior, EmailNuevo)
+        VALUES (OLD.UsuarioID, OLD.Email, NEW.Email);
+    END IF;
+END$$
+
+
+
+
+
+
+-- 4. Respalda el autor antes de eliminarlo.
+
+CREATE TRIGGER trg_respaldo_autor
+BEFORE DELETE ON Autores
+FOR EACH ROW
+BEGIN
+    INSERT INTO AutoresRespaldo (AutorID, Nombre, Nacionalidad)
+    VALUES (OLD.AutorID, OLD.Nombre, OLD.Nacionalidad);
+END$$
+
+
+
+
+
+
+
+
+-- 5. Respalda el libro antes de eliminarlo.
+
+CREATE TRIGGER trg_respaldo_libro
+BEFORE DELETE ON Libros
+FOR EACH ROW
+BEGIN
+    INSERT INTO LibrosRespaldo
+        (LibroID, Titulo, AutorID, GeneroID, AnioPublicacion, ISBN)
+    VALUES
+        (OLD.LibroID, OLD.Titulo, OLD.AutorID, OLD.GeneroID,
+         OLD.AnioPublicacion, OLD.ISBN);
+END$$
+
+DELIMITER ;
+
+
+
+
+
+
+
+
+-- 6. Historial general de cambios de LIBROS: inserción, modificación y borrado.
+
+CREATE TABLE IF NOT EXISTS HistorialLibros (
+    HistorialID INT AUTO_INCREMENT PRIMARY KEY,
+    LibroID INT,
+    Accion VARCHAR(10),
+    DatosAnteriores JSON,
+    DatosNuevos JSON,
+    Fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DELIMITER $$
+
+CREATE TRIGGER trg_historial_libros_insert
+AFTER INSERT ON Libros
+FOR EACH ROW
+BEGIN
+    INSERT INTO HistorialLibros (LibroID, Accion, DatosNuevos)
+    VALUES (
+        NEW.LibroID, 'INSERT',
+        JSON_OBJECT('Titulo', NEW.Titulo, 'AutorID', NEW.AutorID,
+                    'GeneroID', NEW.GeneroID, 'AnioPublicacion', NEW.AnioPublicacion,
+                    'ISBN', NEW.ISBN)
+    );
+END$$
+
+CREATE TRIGGER trg_historial_libros_update
+AFTER UPDATE ON Libros
+FOR EACH ROW
+BEGIN
+    INSERT INTO HistorialLibros (LibroID, Accion, DatosAnteriores, DatosNuevos)
+    VALUES (
+        NEW.LibroID, 'UPDATE',
+        JSON_OBJECT('Titulo', OLD.Titulo, 'AutorID', OLD.AutorID,
+                    'GeneroID', OLD.GeneroID, 'AnioPublicacion', OLD.AnioPublicacion,
+                    'ISBN', OLD.ISBN),
+        JSON_OBJECT('Titulo', NEW.Titulo, 'AutorID', NEW.AutorID,
+                    'GeneroID', NEW.GeneroID, 'AnioPublicacion', NEW.AnioPublicacion,
+                    'ISBN', NEW.ISBN)
+    );
+END$$
+
+CREATE TRIGGER trg_historial_libros_delete
+AFTER DELETE ON Libros
+FOR EACH ROW
+BEGIN
+    INSERT INTO HistorialLibros (LibroID, Accion, DatosAnteriores)
+    VALUES (
+        OLD.LibroID, 'DELETE',
+        JSON_OBJECT('Titulo', OLD.Titulo, 'AutorID', OLD.AutorID,
+                    'GeneroID', OLD.GeneroID, 'AnioPublicacion', OLD.AnioPublicacion,
+                    'ISBN', OLD.ISBN)
+    );
+END$$
+
+
+
+
+
+
+
+
+
+
+
+-- 7. No deja prestar un libro que ya tiene un préstamo activo vigente.
+
+CREATE TRIGGER trg_no_prestar_libro_ocupado
+BEFORE INSERT ON Prestamos
+FOR EACH ROW
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM Prestamos
+        WHERE LibroID = NEW.LibroID
+          AND Estado = 'ACTIVO'
+          AND FechaDevolucion >= CURDATE()
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El libro todavía se encuentra prestado';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+
+
+-- 8. Un usuario no puede superar tres préstamos activos.
+
+CREATE TRIGGER trg_maximo_tres_prestamos
+BEFORE INSERT ON Prestamos
+FOR EACH ROW
+BEGIN
+    DECLARE v_cantidad INT;
+
+    SELECT COUNT(*) INTO v_cantidad
+    FROM Prestamos
+    WHERE UsuarioID = NEW.UsuarioID
+      AND Estado = 'ACTIVO'
+      AND FechaDevolucion >= CURDATE();
+
+    IF v_cantidad >= 3 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El usuario ya tiene 3 préstamos activos';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+-- 9. Impide borrar un autor que todavía tiene libros.
+
+CREATE TRIGGER trg_no_borrar_autor_con_libros
+BEFORE DELETE ON Autores
+FOR EACH ROW
+BEGIN
+    IF EXISTS (SELECT 1 FROM Libros WHERE AutorID = OLD.AutorID) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El autor tiene libros asociados';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+
+
+
+-- 10. Impide borrar un género que todavía tiene libros.
+
+CREATE TRIGGER trg_no_borrar_genero_con_libros
+BEFORE DELETE ON Generos
+FOR EACH ROW
+BEGIN
+    IF EXISTS (SELECT 1 FROM Libros WHERE GeneroID = OLD.GeneroID) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El género tiene libros asociados';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+
+
+
+-- 11. Impide borrar un usuario que tiene préstamos registrados.
+
+CREATE TRIGGER trg_no_borrar_usuario_con_prestamos
+BEFORE DELETE ON Usuarios
+FOR EACH ROW
+BEGIN
+    IF EXISTS (SELECT 1 FROM Prestamos WHERE UsuarioID = OLD.UsuarioID) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El usuario tiene préstamos registrados';
+    END IF;
+END$$
+
+DELIMITER ;
+
+
+
+
+
+
+
+-- 12. Historial de intentos de modificar el título.
+CREATE TABLE IF NOT EXISTS HistorialIntentos (
+    IntentoID INT AUTO_INCREMENT PRIMARY KEY,
+    FechaIntento DATETIME DEFAULT CURRENT_TIMESTAMP,
+    LibroID INT,
+    Campo VARCHAR(50),
+    ValorAnterior VARCHAR(255),
+    ValorSolicitado VARCHAR(255),
+    Resultado VARCHAR(30)
+);
+
+DELIMITER $$
+CREATE TRIGGER trg_registrar_intento_titulo
+BEFORE UPDATE ON Libros
+FOR EACH ROW
+BEGIN
+    DECLARE v_campo VARCHAR(50);
+
+    IF NOT (NEW.Titulo <=> OLD.Titulo) THEN
+        SET v_campo = 'Titulo';
+
+        INSERT INTO HistorialIntentos
+            (LibroID, Campo, ValorAnterior, ValorSolicitado, Resultado)
+        VALUES
+            (OLD.LibroID, v_campo, OLD.Titulo, NEW.Titulo, 'RECHAZADO');
+
+        -- Conserva el valor anterior: el intento queda registrado y no se aplica.
+        SET NEW.Titulo = OLD.Titulo;
+    END IF;
+END$$
+DELIMITER ;
