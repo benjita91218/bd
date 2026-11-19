@@ -1,0 +1,192 @@
+/* =========================================================
+   TRIGGERS BÁSICOS Y VALIDACIONES
+   ========================================================= */
+DELIMITER $$
+
+-- 1. Año válido: supuesto didáctico, desde 1450 hasta el año actual.
+
+CREATE TRIGGER trg_validar_anio_libro
+BEFORE INSERT ON Libros
+FOR EACH ROW
+BEGIN
+    IF NEW.AnioPublicacion IS NULL
+       OR NEW.AnioPublicacion < 1450
+       OR NEW.AnioPublicacion > YEAR(CURDATE()) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Año de publicación incoherente';
+    END IF;
+END$$
+
+
+
+
+
+
+-- 2. Nombre de usuario de al menos 3 caracteres.
+
+CREATE TRIGGER trg_validar_nombre_usuario
+BEFORE INSERT ON Usuarios
+FOR EACH ROW
+BEGIN
+    IF CHAR_LENGTH(TRIM(NEW.Nombre)) < 3 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El nombre debe tener al menos 3 caracteres';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+
+-- 3. Fecha de devolución no anterior al préstamo.
+
+CREATE TRIGGER trg_validar_fechas_prestamo
+BEFORE INSERT ON Prestamos
+FOR EACH ROW
+BEGIN
+    IF NEW.FechaDevolucion < NEW.FechaPrestamo THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'La devolución no puede ser anterior al préstamo';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+-- 4. Pasa el género a mayúsculas.
+
+CREATE TRIGGER trg_genero_mayusculas
+BEFORE INSERT ON Generos
+FOR EACH ROW
+BEGIN
+    SET NEW.Nombre = UPPER(NEW.Nombre);
+END$$
+
+
+
+
+
+
+
+
+
+-- 5. Formato simple de título: primera letra mayúscula y resto minúscula.
+
+CREATE TRIGGER trg_autor_formato_titulo
+BEFORE INSERT ON Autores
+FOR EACH ROW
+BEGIN
+    SET NEW.Nombre = CONCAT(
+        UPPER(LEFT(TRIM(NEW.Nombre),1)),
+        LOWER(SUBSTRING(TRIM(NEW.Nombre),2))
+    );
+END$$
+
+
+
+
+
+
+
+
+
+-- 7. Evita ISBN duplicado al insertar.
+
+CREATE TRIGGER trg_isbn_no_repetido
+BEFORE INSERT ON Libros
+FOR EACH ROW
+BEGIN
+    IF NEW.ISBN IS NOT NULL
+       AND EXISTS (SELECT 1 FROM Libros WHERE ISBN = NEW.ISBN) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Ya existe un libro con ese ISBN';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+
+-- 8. No permite libro sin autor.
+
+CREATE TRIGGER trg_libro_obligatorio_autor
+BEFORE INSERT ON Libros
+FOR EACH ROW
+BEGIN
+    IF NEW.AutorID IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El libro debe tener un autor';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+-- 9. Verifica que el libro exista antes de registrar el préstamo.
+
+CREATE TRIGGER trg_prestamo_libro_existente
+BEFORE INSERT ON Prestamos
+FOR EACH ROW
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM Libros WHERE LibroID = NEW.LibroID) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El libro indicado no existe';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+
+
+-- 10. Caracteres permitidos en el título: letras, números, espacios y puntuación.
+
+CREATE TRIGGER trg_validar_caracteres_titulo
+BEFORE INSERT ON Libros
+FOR EACH ROW
+BEGIN
+    IF NEW.Titulo NOT REGEXP '^[[:alnum:] áéíóúÁÉÍÓÚñÑ.,:;!?()/-]+$' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El título contiene caracteres no permitidos';
+    END IF;
+END$$
+
+
+
+
+
+
+
+-- 11. No permite cambiar FechaDevolucion.
+
+CREATE TRIGGER trg_no_modificar_fecha_devolucion
+BEFORE UPDATE ON Prestamos
+FOR EACH ROW
+BEGIN
+    IF NOT (NEW.FechaDevolucion <=> OLD.FechaDevolucion) THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se permite modificar la fecha de devolución';
+    END IF;
+END$$
+
+DELIMITER ;
