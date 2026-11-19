@@ -1,1 +1,562 @@
+DELIMITER $$
 
+-- 1. Mostrar todas las compras con nombre del cliente y descripción del producto
+
+CREATE PROCEDURE mostrar_compras()
+BEGIN
+    SELECT
+        co.id_compra,
+        cl.nombre,
+        cl.apellido,
+        p.descripcion,
+        dc.cantidad,
+        dc.subtotal
+    FROM compras co
+    INNER JOIN clientes cl ON co.id_cliente = cl.id_cliente
+    INNER JOIN detalle_compra dc ON co.id_compra = dc.id_compra
+    INNER JOIN productos p ON dc.id_producto = p.id_producto;
+END$$
+
+
+-- 2. Calcular el precio final de una compra
+
+CREATE PROCEDURE precio_final_compra(IN p_id_compra INT)
+BEGIN
+    DECLARE v_total DECIMAL(10,2);
+
+    SELECT COALESCE(SUM(subtotal), 0)
+    INTO v_total
+    FROM detalle_compra
+    WHERE id_compra = p_id_compra;
+
+    SELECT v_total AS precio_final;
+END$$
+
+
+-- 3. Verificar si un cliente puede realizar una compra y registrarla
+
+CREATE PROCEDURE realizar_compra(
+    IN p_nombre_cliente VARCHAR(100),
+    IN p_id_producto INT,
+    IN p_cantidad INT,
+    IN p_id_compra INT,
+    IN p_id_detalle INT
+)
+BEGIN
+    DECLARE v_id_cliente INT DEFAULT NULL;
+    DECLARE v_stock INT DEFAULT NULL;
+    DECLARE v_precio DECIMAL(10,2) DEFAULT NULL;
+
+    SELECT id_cliente
+    INTO v_id_cliente
+    FROM clientes
+    WHERE CONCAT(nombre, ' ', apellido) = p_nombre_cliente
+    LIMIT 1;
+
+    SELECT stock, precio
+    INTO v_stock, v_precio
+    FROM productos
+    WHERE id_producto = p_id_producto;
+
+    IF v_id_cliente IS NULL THEN
+        SELECT 'El cliente no está registrado' AS mensaje;
+
+    ELSEIF v_stock IS NULL THEN
+        SELECT 'El producto no existe' AS mensaje;
+
+    ELSEIF p_cantidad <= 0 THEN
+        SELECT 'La cantidad debe ser mayor que cero' AS mensaje;
+
+    ELSEIF v_stock >= p_cantidad THEN
+
+        INSERT INTO compras (id_compra, fecha_compra, total, id_cliente)
+        VALUES (
+            p_id_compra,
+            CURDATE(),
+            v_precio * p_cantidad,
+            v_id_cliente
+        );
+
+        INSERT INTO detalle_compra (
+            id_detalle, id_compra, id_producto, cantidad, subtotal
+        )
+        VALUES (
+            p_id_detalle,
+            p_id_compra,
+            p_id_producto,
+            p_cantidad,
+            v_precio * p_cantidad
+        );
+
+        UPDATE productos
+        SET stock = stock - p_cantidad
+        WHERE id_producto = p_id_producto;
+
+        SELECT 'Compra realizada correctamente' AS mensaje;
+
+    ELSE
+        SELECT 'Stock insuficiente para realizar la compra' AS mensaje;
+    END IF;
+END$$
+
+
+-- 4. Calcular el total gastado por un cliente
+
+CREATE PROCEDURE total_gastado_cliente(IN p_id_cliente INT)
+BEGIN
+    SELECT
+        id_cliente,
+        COALESCE(SUM(total), 0) AS total_gastado
+    FROM compras
+    WHERE id_cliente = p_id_cliente
+    GROUP BY id_cliente;
+END$$
+
+
+-- 5. Mostrar la región de cada cliente
+
+CREATE PROCEDURE mostrar_region_clientes()
+BEGIN
+    SELECT
+        cl.nombre,
+        cl.apellido,
+        pr.nombre_provincia,
+        pr.region
+    FROM clientes cl
+    INNER JOIN ciudades ci ON cl.id_ciudad = ci.id_ciudad
+    INNER JOIN provincias pr ON ci.id_provincia = pr.id_provincia;
+END$$
+
+
+-- 6. Determinar la rentabilidad de un producto según sus ventas
+
+CREATE PROCEDURE verificar_rentabilidad(IN p_id_producto INT)
+BEGIN
+    DECLARE v_ingresos DECIMAL(10,2);
+    DECLARE v_costos DECIMAL(10,2);
+
+    SELECT
+        COALESCE(SUM(dc.subtotal), 0),
+        COALESCE(SUM(dc.cantidad * p.costo), 0)
+    INTO v_ingresos, v_costos
+    FROM detalle_compra dc
+    INNER JOIN productos p ON dc.id_producto = p.id_producto
+    WHERE p.id_producto = p_id_producto;
+
+    IF v_ingresos > v_costos THEN
+        SELECT 'El producto es rentable' AS resultado;
+    ELSEIF v_ingresos = v_costos THEN
+        SELECT 'El producto está en punto de equilibrio' AS resultado;
+    ELSE
+        SELECT 'El producto no es rentable' AS resultado;
+    END IF;
+END$$
+
+
+-- 7. Calcular la población total de una región
+
+CREATE PROCEDURE poblacion_region(IN p_region VARCHAR(50))
+BEGIN
+    SELECT
+        pr.region,
+        SUM(ci.poblacion) AS poblacion_total
+    FROM provincias pr
+    INNER JOIN ciudades ci ON pr.id_provincia = ci.id_provincia
+    WHERE pr.region = p_region
+    GROUP BY pr.region;
+END$$
+
+
+-- 8. Verificar si un cliente existe
+
+CREATE PROCEDURE verificar_cliente(IN p_id_cliente INT)
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM clientes
+        WHERE id_cliente = p_id_cliente
+    ) THEN
+        SELECT 'El cliente existe' AS resultado;
+    ELSE
+        SELECT 'El cliente no existe' AS resultado;
+    END IF;
+END$$
+
+
+-- 9. Mostrar el total gastado por cada cliente
+
+CREATE PROCEDURE total_gastado_por_clientes()
+BEGIN
+    SELECT
+        cl.id_cliente,
+        cl.nombre,
+        cl.apellido,
+        COALESCE(SUM(co.total), 0) AS total_gastado
+    FROM clientes cl
+    LEFT JOIN compras co ON cl.id_cliente = co.id_cliente
+    GROUP BY cl.id_cliente, cl.nombre, cl.apellido;
+END$$
+
+
+-- 10. Mostrar cliente, ciudad y provincia
+
+CREATE PROCEDURE mostrar_cliente_ciudad_provincia()
+BEGIN
+    SELECT
+        cl.nombre,
+        cl.apellido,
+        ci.nombre_ciudad,
+        pr.nombre_provincia
+    FROM clientes cl
+    INNER JOIN ciudades ci ON cl.id_ciudad = ci.id_ciudad
+    INNER JOIN provincias pr ON ci.id_provincia = pr.id_provincia;
+END$$
+
+
+-- 11. Calcular el valor total del inventario
+
+CREATE PROCEDURE valor_inventario()
+BEGIN
+    SELECT
+        COALESCE(SUM(precio * stock), 0) AS valor_total_inventario
+    FROM productos;
+END$$
+
+
+-- 12. Verificar si una ciudad supera una población determinada
+
+CREATE PROCEDURE verificar_poblacion_ciudad(
+    IN p_id_ciudad INT,
+    IN p_poblacion INT
+)
+BEGIN
+    DECLARE v_poblacion INT DEFAULT NULL;
+
+    SELECT poblacion
+    INTO v_poblacion
+    FROM ciudades
+    WHERE id_ciudad = p_id_ciudad;
+
+    IF v_poblacion IS NULL THEN
+        SELECT 'La ciudad no existe' AS resultado;
+
+    ELSEIF v_poblacion > p_poblacion THEN
+        SELECT 'La ciudad supera la población indicada' AS resultado;
+
+    ELSE
+        SELECT 'La ciudad no supera la población indicada' AS resultado;
+    END IF;
+END$$
+
+
+-- 13. Calcular la cantidad de productos comprados por un cliente
+
+CREATE PROCEDURE cantidad_comprada_cliente(IN p_id_cliente INT)
+BEGIN
+    SELECT
+        cl.id_cliente,
+        cl.nombre,
+        cl.apellido,
+        COALESCE(SUM(dc.cantidad), 0) AS cantidad_comprada
+    FROM clientes cl
+    LEFT JOIN compras co ON cl.id_cliente = co.id_cliente
+    LEFT JOIN detalle_compra dc ON co.id_compra = dc.id_compra
+    WHERE cl.id_cliente = p_id_cliente
+    GROUP BY cl.id_cliente, cl.nombre, cl.apellido;
+END$$
+
+
+-- 14. Verificar si un producto necesita reposición
+
+CREATE PROCEDURE verificar_reposicion(IN p_id_producto INT)
+BEGIN
+    DECLARE v_stock INT DEFAULT NULL;
+
+    SELECT stock
+    INTO v_stock
+    FROM productos
+    WHERE id_producto = p_id_producto;
+
+    IF v_stock IS NULL THEN
+        SELECT 'El producto no existe' AS resultado;
+
+    ELSEIF v_stock = 0 THEN
+        SELECT 'REPOSICIÓN URGENTE' AS resultado;
+
+    ELSEIF v_stock < 20 THEN
+        SELECT 'STOCK BAJO' AS resultado;
+
+    ELSE
+        SELECT 'STOCK SUFICIENTE' AS resultado;
+    END IF;
+END$$
+
+
+-- 15. Calcular el valor del inventario de una marca
+
+CREATE PROCEDURE valor_productos_marca(IN p_marca VARCHAR(50))
+BEGIN
+    SELECT
+        marca,
+        COALESCE(SUM(precio * stock), 0) AS valor_inventario
+    FROM productos
+    WHERE marca = p_marca
+    GROUP BY marca;
+END$$
+
+
+-- 16. Verificar si hay stock suficiente para una cantidad solicitada
+
+CREATE PROCEDURE verificar_stock(
+    IN p_id_producto INT,
+    IN p_cantidad INT
+)
+BEGIN
+    DECLARE v_stock INT DEFAULT NULL;
+
+    SELECT stock
+    INTO v_stock
+    FROM productos
+    WHERE id_producto = p_id_producto;
+
+    IF v_stock IS NULL THEN
+        SELECT 'El producto no existe' AS resultado;
+
+    ELSEIF p_cantidad <= 0 THEN
+        SELECT 'La cantidad debe ser mayor que cero' AS resultado;
+
+    ELSEIF v_stock >= p_cantidad THEN
+        SELECT 'Hay stock suficiente' AS resultado;
+
+    ELSE
+        SELECT 'No hay stock suficiente' AS resultado;
+    END IF;
+END$$
+
+
+-- 17. Mostrar la provincia y el intendente de la ciudad de cada cliente
+
+CREATE PROCEDURE mostrar_intendente_clientes()
+BEGIN
+    SELECT
+        cl.nombre,
+        cl.apellido,
+        ci.nombre_ciudad,
+        ci.intendente,
+        pr.nombre_provincia
+    FROM clientes cl
+    INNER JOIN ciudades ci ON cl.id_ciudad = ci.id_ciudad
+    INNER JOIN provincias pr ON ci.id_provincia = pr.id_provincia;
+END$$
+
+
+-- 18. Calcular el IVA de un producto
+
+CREATE PROCEDURE calcular_iva(IN p_id_producto INT)
+BEGIN
+    SELECT
+        nombre_producto,
+        precio AS precio_sin_iva,
+        precio * 0.21 AS iva,
+        precio * 1.21 AS precio_con_iva
+    FROM productos
+    WHERE id_producto = p_id_producto;
+END$$
+
+
+-- 19. Mostrar la compra de mayor valor
+
+CREATE PROCEDURE compra_mas_grande()
+BEGIN
+    SELECT *
+    FROM compras
+    WHERE total = (
+        SELECT MAX(total)
+        FROM compras
+    );
+END$$
+
+
+-- 20. Mostrar los clientes ordenados por provincia
+
+CREATE PROCEDURE clientes_por_provincia()
+BEGIN
+    SELECT
+        pr.nombre_provincia,
+        cl.nombre,
+        cl.apellido,
+        ci.nombre_ciudad
+    FROM provincias pr
+    INNER JOIN ciudades ci ON pr.id_provincia = ci.id_provincia
+    INNER JOIN clientes cl ON ci.id_ciudad = cl.id_ciudad
+    ORDER BY pr.nombre_provincia, cl.apellido;
+END$$
+
+
+-- 21. Detectar clientes que realizaron dos compras con menos de cinco minutos de diferencia
+
+CREATE PROCEDURE detectar_compras_sospechosas()
+BEGIN
+    SELECT DISTINCT
+        cl.id_cliente,
+        cl.nombre,
+        cl.apellido
+    FROM compras c1
+    INNER JOIN compras c2
+        ON c1.id_cliente = c2.id_cliente
+        AND c1.id_compra < c2.id_compra
+    INNER JOIN clientes cl
+        ON c1.id_cliente = cl.id_cliente
+    WHERE ABS(TIMESTAMPDIFF(SECOND, c1.fecha_compra, c2.fecha_compra)) < 300;
+END$$
+
+
+-- 22. Mostrar las tres marcas con mayores ingresos por región
+
+CREATE PROCEDURE ranking_marcas_region()
+BEGIN
+    WITH ingresos AS (
+        SELECT
+            pr.region,
+            p.marca,
+            SUM(dc.subtotal) AS total_ingresos
+        FROM provincias pr
+        INNER JOIN ciudades ci ON pr.id_provincia = ci.id_provincia
+        INNER JOIN clientes cl ON ci.id_ciudad = cl.id_ciudad
+        INNER JOIN compras co ON cl.id_cliente = co.id_cliente
+        INNER JOIN detalle_compra dc ON co.id_compra = dc.id_compra
+        INNER JOIN productos p ON dc.id_producto = p.id_producto
+        GROUP BY pr.region, p.marca
+    ),
+    ranking AS (
+        SELECT
+            region,
+            marca,
+            total_ingresos,
+            ROW_NUMBER() OVER (
+                PARTITION BY region
+                ORDER BY total_ingresos DESC
+            ) AS puesto
+        FROM ingresos
+    )
+    SELECT
+        region,
+        marca,
+        total_ingresos,
+        puesto
+    FROM ranking
+    WHERE puesto <= 3
+    ORDER BY region, puesto;
+END$$
+
+
+-- 23. Mostrar los clientes que compraron el mes pasado y también este mes
+
+CREATE PROCEDURE retencion_clientes()
+BEGIN
+    SELECT
+        cl.id_cliente,
+        cl.nombre,
+        cl.apellido
+    FROM clientes cl
+    WHERE EXISTS (
+        SELECT 1
+        FROM compras co
+        WHERE co.id_cliente = cl.id_cliente
+          AND co.fecha_compra >= DATE_FORMAT(
+              DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m-01'
+          )
+          AND co.fecha_compra < DATE_FORMAT(CURDATE(), '%Y-%m-01')
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM compras co
+        WHERE co.id_cliente = cl.id_cliente
+          AND co.fecha_compra >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+          AND co.fecha_compra < DATE_ADD(
+              DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL 1 MONTH
+          )
+    );
+END$$
+
+
+-- 24. Aumentar un 15% los precios de una marca si pertenece a una provincia
+-- con más de un millón de habitantes
+
+CREATE PROCEDURE aumentar_precios_inflacion(IN p_marca VARCHAR(50))
+BEGIN
+    UPDATE productos p
+    INNER JOIN provincias pr ON p.id_provincia = pr.id_provincia
+    SET p.precio = p.precio * 1.15
+    WHERE p.marca = p_marca
+      AND pr.poblacion > 1000000;
+
+    SELECT 'Actualización de precios realizada' AS resultado;
+END$$
+
+
+-- 25. Mostrar el mes con mayor volumen de ventas de cada marca
+
+CREATE PROCEDURE reporte_estacionalidad()
+BEGIN
+    WITH ventas_mensuales AS (
+        SELECT
+            p.marca,
+            MONTH(co.fecha_compra) AS mes,
+            SUM(dc.cantidad) AS cantidad_vendida
+        FROM productos p
+        INNER JOIN detalle_compra dc ON p.id_producto = dc.id_producto
+        INNER JOIN compras co ON dc.id_compra = co.id_compra
+        GROUP BY p.marca, MONTH(co.fecha_compra)
+    ),
+    ranking AS (
+        SELECT
+            marca,
+            mes,
+            cantidad_vendida,
+            RANK() OVER (
+                PARTITION BY marca
+                ORDER BY cantidad_vendida DESC
+            ) AS puesto
+        FROM ventas_mensuales
+    )
+    SELECT
+        marca,
+        mes,
+        cantidad_vendida
+    FROM ranking
+    WHERE puesto = 1
+    ORDER BY marca;
+END$$
+
+
+-- 26. Mostrar los clientes que compraron todos los productos de una marca
+
+CREATE PROCEDURE clientes_embajadores(IN p_marca VARCHAR(50))
+BEGIN
+    SELECT
+        cl.id_cliente,
+        cl.nombre,
+        cl.apellido
+    FROM clientes cl
+    WHERE EXISTS (
+        SELECT 1
+        FROM productos p
+        WHERE p.marca = p_marca
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM productos p
+        WHERE p.marca = p_marca
+          AND NOT EXISTS (
+              SELECT 1
+              FROM compras co
+              INNER JOIN detalle_compra dc
+                  ON co.id_compra = dc.id_compra
+              WHERE co.id_cliente = cl.id_cliente
+                AND dc.id_producto = p.id_producto
+          )
+    );
+END$$
+
+DELIMITER ;
