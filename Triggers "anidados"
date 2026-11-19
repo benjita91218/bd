@@ -1,0 +1,242 @@
+/* =========================================================
+   TRIGGERS ANIDADOS (FUNCIONES AUXILIARES)
+   ========================================================= */
+
+CREATE TABLE IF NOT EXISTS AuditoriaPrestamos (
+    AuditoriaID INT AUTO_INCREMENT PRIMARY KEY,
+    PrestamoID INT,
+    Descripcion VARCHAR(600),
+    Fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS AuditoriaAutores (
+    AuditoriaID INT AUTO_INCREMENT PRIMARY KEY,
+    LibroID INT,
+    DescripcionAutor VARCHAR(400),
+Fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DELIMITER $$
+
+
+
+
+
+
+
+-- 1. Función que recibe el ID del libro y devuelve su título.
+
+CREATE FUNCTION nombre_libro(p_id_libro INT)
+RETURNS VARCHAR(255)
+READS SQL DATA
+BEGIN
+    DECLARE v_titulo VARCHAR(255) DEFAULT NULL;
+
+    SELECT Titulo INTO v_titulo
+    FROM Libros
+    WHERE LibroID = p_id_libro
+    LIMIT 1;
+
+    RETURN v_titulo;
+END$$
+
+-- Trigger que usa la función anterior al registrar un préstamo.
+CREATE TRIGGER trg_prestamo_con_nombre_libro
+AFTER INSERT ON Prestamos
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaPrestamos (PrestamoID, Descripcion)
+    VALUES (
+        NEW.PrestamoID,
+        CONCAT('Se prestó el libro ', nombre_libro(NEW.LibroID))
+    );
+END$$
+
+
+
+
+
+
+
+
+
+
+-- 2. Calcula los días entre las dos fechas.
+
+CREATE FUNCTION dias_prestamo(
+    p_fecha_prestamo DATE,
+    p_fecha_devolucion DATE
+)
+RETURNS INT
+DETERMINISTIC
+NO SQL
+BEGIN
+    RETURN DATEDIFF(p_fecha_devolucion, p_fecha_prestamo);
+END$$
+
+-- Trigger que rechaza préstamos de más de 30 días.
+CREATE TRIGGER trg_maximo_30_dias
+BEFORE INSERT ON Prestamos
+FOR EACH ROW
+BEGIN
+    IF dias_prestamo(NEW.FechaPrestamo, NEW.FechaDevolucion) > 30 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El préstamo no puede durar más de 30 días';
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+-- 3. Primera función: título del libro.
+
+CREATE FUNCTION titulo_libro(p_id_libro INT)
+RETURNS VARCHAR(255)
+READS SQL DATA
+BEGIN
+    DECLARE v_titulo VARCHAR(255) DEFAULT NULL;
+    SELECT Titulo INTO v_titulo
+    FROM Libros WHERE LibroID = p_id_libro LIMIT 1;
+    RETURN v_titulo;
+END$$
+
+-- Segunda función: nombre del autor de ese libro.
+CREATE FUNCTION autor_libro(p_id_libro INT)
+RETURNS VARCHAR(255)
+READS SQL DATA
+BEGIN
+    DECLARE v_autor VARCHAR(255) DEFAULT NULL;
+
+    SELECT a.Nombre INTO v_autor
+    FROM Libros l
+    INNER JOIN Autores a ON l.AutorID = a.AutorID
+    WHERE l.LibroID = p_id_libro
+    LIMIT 1;
+
+    RETURN v_autor;
+END$$
+
+-- Tercera función: llama a las dos anteriores.
+CREATE FUNCTION descripcion_libro(p_id_libro INT)
+RETURNS VARCHAR(600)
+READS SQL DATA
+BEGIN
+    RETURN CONCAT(titulo_libro(p_id_libro), ' - ', autor_libro(p_id_libro));
+END$$
+
+-- Trigger que registra la descripción completa al insertar un préstamo.
+CREATE TRIGGER trg_prestamo_descripcion_completa
+AFTER INSERT ON Prestamos
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaPrestamos (PrestamoID, Descripcion)
+    VALUES (NEW.PrestamoID, descripcion_libro(NEW.LibroID));
+END$$
+
+
+
+
+
+
+
+
+
+
+-- 4. Cuenta cuántos libros tiene un autor.
+
+CREATE FUNCTION cantidad_libros_autor(p_id_autor INT)
+RETURNS INT
+READS SQL DATA
+BEGIN
+    DECLARE v_cantidad INT DEFAULT 0;
+
+    SELECT COUNT(*) INTO v_cantidad
+    FROM Libros
+    WHERE AutorID = p_id_autor;
+
+    RETURN v_cantidad;
+END$$
+
+-- Devuelve el nombre del autor.
+CREATE FUNCTION nombre_autor(p_id_autor INT)
+RETURNS VARCHAR(255)
+READS SQL DATA
+BEGIN
+    DECLARE v_nombre VARCHAR(255) DEFAULT NULL;
+
+    SELECT Nombre INTO v_nombre
+    FROM Autores
+    WHERE AutorID = p_id_autor
+    LIMIT 1;
+
+    RETURN v_nombre;
+END$$
+
+-- Función anidada: usa nombre_autor y cantidad_libros_autor.
+CREATE FUNCTION descripcion_autor(p_id_autor INT)
+RETURNS VARCHAR(400)
+READS SQL DATA
+BEGIN
+    RETURN CONCAT(
+        nombre_autor(p_id_autor),
+        ' - ',
+        cantidad_libros_autor(p_id_autor),
+        ' libros registrados'
+    );
+END$$
+
+-- Trigger: al insertar un libro, guarda la descripción de su autor.
+CREATE TRIGGER trg_descripcion_autor_al_insertar_libro
+AFTER INSERT ON Libros
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaAutores (LibroID, DescripcionAutor)
+    VALUES (NEW.LibroID, descripcion_autor(NEW.AutorID));
+END$$
+
+
+
+
+
+
+-- 5. Función que determina si el año es de hace más de 50 años.
+
+CREATE FUNCTION anio_libro_es_antiguo(p_anio INT)
+RETURNS BOOLEAN
+DETERMINISTIC
+NO SQL
+BEGIN
+    RETURN p_anio < YEAR(CURDATE()) - 50;
+END$$
+
+-- Función que verifica si el autor tendrá más de 5 libros al agregar éste.
+CREATE FUNCTION cantidad_libros_para_nuevo(p_id_autor INT)
+RETURNS INT
+READS SQL DATA
+BEGIN
+    DECLARE v_cantidad INT DEFAULT 0;
+
+    SELECT COUNT(*) INTO v_cantidad
+    FROM Libros
+    WHERE AutorID = p_id_autor;
+
+    RETURN v_cantidad;
+END$$
+
+-- BEFORE INSERT: el libro nuevo todavía no está contado.
+-- Por eso, si ya existen 5, al agregar el nuevo quedarán 6 (>5).
+CREATE TRIGGER trg_clasificar_libro_clasico
+BEFORE INSERT ON Libros
+FOR EACH ROW
+BEGIN
+    IF anio_libro_es_antiguo(NEW.AnioPublicacion) = 1
+       AND cantidad_libros_para_nuevo(NEW.AutorID) >= 5 THEN
+        SET NEW.Categoria = 'Clasico';
+    END IF;
+END$$
+
+DELIMITER ;
