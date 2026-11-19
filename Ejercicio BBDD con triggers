@@ -1,0 +1,112 @@
+/* =========================================================
+   TRABAJO: BBDD CON TRIGGERS (OFICINA)
+   ========================================================= */
+
+CREATE DATABASE IF NOT EXISTS oficina;
+USE oficina;
+
+CREATE TABLE IF NOT EXISTS Roles (
+    RolID INT AUTO_INCREMENT PRIMARY KEY,
+    NombreRol VARCHAR(50) NOT NULL UNIQUE,
+    PagoHora DECIMAL(10,2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS Empleados (
+    EmpleadoID INT AUTO_INCREMENT PRIMARY KEY,
+    Nombre VARCHAR(100) NOT NULL,
+    DNI VARCHAR(20) NOT NULL UNIQUE,
+    RolID INT NOT NULL,
+    HorasTrabajadas DECIMAL(8,2) NOT NULL DEFAULT 0,
+    Salario DECIMAL(12,2) NOT NULL DEFAULT 0,
+    FOREIGN KEY (RolID) REFERENCES Roles(RolID)
+);
+
+DELIMITER $$
+
+
+
+
+
+-- 2. Procedimiento para insertar empleado y calcular su salario.
+
+CREATE PROCEDURE registrar_empleado(
+    IN p_nombre VARCHAR(100),
+    IN p_dni VARCHAR(20),
+    IN p_rol_id INT,
+    IN p_horas DECIMAL(8,2)
+)
+BEGIN
+    DECLARE v_pago_hora DECIMAL(10,2) DEFAULT NULL;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_pago_hora = NULL;
+
+    SELECT PagoHora INTO v_pago_hora
+    FROM Roles WHERE RolID = p_rol_id;
+
+    IF v_pago_hora IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'El rol indicado no existe';
+    ELSEIF p_horas < 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Las horas no pueden ser negativas';
+    ELSE
+        INSERT INTO Empleados
+            (Nombre, DNI, RolID, HorasTrabajadas, Salario)
+        VALUES
+            (p_nombre, p_dni, p_rol_id, p_horas, p_horas * v_pago_hora);
+    END IF;
+END$$
+
+
+
+
+
+
+-- 3. Si cambia el pago del rol, recalcula salarios de sus empleados.
+
+CREATE TRIGGER trg_actualizar_salarios_por_rol
+AFTER UPDATE ON Roles
+FOR EACH ROW
+BEGIN
+    IF NEW.PagoHora <> OLD.PagoHora THEN
+        UPDATE Empleados
+        SET Salario = HorasTrabajadas * NEW.PagoHora
+        WHERE RolID = NEW.RolID;
+    END IF;
+END$$
+
+
+
+
+
+-- 4. Función que elimina por DNI y devuelve filas eliminadas (0 o 1).
+
+CREATE FUNCTION eliminar_empleado(p_dni VARCHAR(20))
+RETURNS INT
+MODIFIES SQL DATA
+BEGIN
+    DELETE FROM Empleados WHERE DNI = p_dni;
+    RETURN ROW_COUNT();
+END$$
+
+
+
+
+
+-- 5. Impide borrar empleados cuyo rol sea Gerente.
+
+CREATE TRIGGER trg_no_eliminar_gerentes
+BEFORE DELETE ON Empleados
+FOR EACH ROW
+BEGIN
+    DECLARE v_rol VARCHAR(50);
+
+    SELECT NombreRol INTO v_rol
+    FROM Roles WHERE RolID = OLD.RolID;
+
+    IF LOWER(v_rol) = 'gerente' THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se permite eliminar empleados gerentes';
+    END IF;
+END$$
+
+DELIMITER ;
