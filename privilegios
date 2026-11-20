@@ -1,0 +1,291 @@
+/*
+RECUPERATORIO - PARTE 5: PRIVILEGIOS
+*/
+
+/* 1. Vista que oculta datos de contacto y permisos del administrador de zonas. */
+
+USE biblioteca;
+
+CREATE OR REPLACE VIEW vw_usuarios_publicos AS
+SELECT UsuarioID, Nombre
+FROM Usuarios;
+
+-- El usuario de zonas podrá consultar la vista, pero no la tabla original.
+-- La vista muestra solo columnas no sensibles.
+
+
+/* =========================================================
+   TRIGGER PARA IMPEDIR BORRAR PRODUCTOS CON STOCK
+   ========================================================= */
+USE tienda;
+
+DELIMITER $$
+CREATE TRIGGER trg_no_borrar_producto_con_stock
+BEFORE DELETE ON productos
+FOR EACH ROW
+BEGIN
+    IF OLD.stock > 0 THEN
+        SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No se puede eliminar un producto que tiene stock';
+    END IF;
+END$$
+DELIMITER ;
+
+
+/* =========================================================
+   TABLA Y TRIGGERS DE AUDITORÍA
+   ========================================================= */
+CREATE TABLE IF NOT EXISTS AuditoriaCambios (
+    AuditoriaID INT AUTO_INCREMENT PRIMARY KEY,
+    UsuarioBD VARCHAR(150),
+    TablaAfectada VARCHAR(80),
+    Accion VARCHAR(20),
+    ClaveRegistro VARCHAR(100),
+    DatosAnteriores JSON,
+    DatosNuevos JSON,
+    Fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+DELIMITER $$
+
+-- Auditoría de inserciones en productos.
+CREATE TRIGGER trg_auditoria_productos_insert
+AFTER INSERT ON productos
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro, DatosNuevos)
+    VALUES
+        (USER(), 'productos', 'INSERT', NEW.id_producto,
+         JSON_OBJECT('nombre', NEW.nombre_producto, 'precio', NEW.precio,
+                     'stock', NEW.stock));
+END$$
+
+
+-- Auditoría de modificaciones en productos.
+CREATE TRIGGER trg_auditoria_productos_update
+AFTER UPDATE ON productos
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro,
+         DatosAnteriores, DatosNuevos)
+    VALUES
+        (USER(), 'productos', 'UPDATE', NEW.id_producto,
+         JSON_OBJECT('nombre', OLD.nombre_producto, 'precio', OLD.precio,
+                     'stock', OLD.stock),
+         JSON_OBJECT('nombre', NEW.nombre_producto, 'precio', NEW.precio,
+                     'stock', NEW.stock));
+END$$
+
+-- Auditoría de eliminaciones en productos.
+CREATE TRIGGER trg_auditoria_productos_delete
+AFTER DELETE ON productos
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro, DatosAnteriores)
+    VALUES
+        (USER(), 'productos', 'DELETE', OLD.id_producto,
+         JSON_OBJECT('nombre', OLD.nombre_producto, 'precio', OLD.precio,
+                     'stock', OLD.stock));
+END$$
+
+-- Auditoría de modificaciones en clientes.
+CREATE TRIGGER trg_auditoria_clientes_update
+AFTER UPDATE ON clientes
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro,
+         DatosAnteriores, DatosNuevos)
+    VALUES
+        (USER(), 'clientes', 'UPDATE', NEW.id_cliente,
+         JSON_OBJECT('nombre', OLD.nombre, 'apellido', OLD.apellido,
+                     'email', OLD.email, 'telefono', OLD.telefono),
+         JSON_OBJECT('nombre', NEW.nombre, 'apellido', NEW.apellido,
+                     'email', NEW.email, 'telefono', NEW.telefono));
+END$$
+
+-- Auditoría de inserciones en compras.
+CREATE TRIGGER trg_auditoria_compras_insert
+AFTER INSERT ON compras
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro, DatosNuevos)
+    VALUES
+        (USER(), 'compras', 'INSERT', NEW.id_compra,
+         JSON_OBJECT('fecha', NEW.fecha_compra, 'total', NEW.total,
+                     'id_cliente', NEW.id_cliente));
+END$$
+
+CREATE TRIGGER trg_auditoria_compras_update
+AFTER UPDATE ON compras
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro,
+         DatosAnteriores, DatosNuevos)
+    VALUES
+        (USER(), 'compras', 'UPDATE', NEW.id_compra,
+         JSON_OBJECT('fecha', OLD.fecha_compra, 'total', OLD.total,
+                     'id_cliente', OLD.id_cliente),
+         JSON_OBJECT('fecha', NEW.fecha_compra, 'total', NEW.total,
+                     'id_cliente', NEW.id_cliente));
+END$$
+
+CREATE TRIGGER trg_auditoria_compras_delete
+AFTER DELETE ON compras
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro, DatosAnteriores)
+    VALUES
+        (USER(), 'compras', 'DELETE', OLD.id_compra,
+         JSON_OBJECT('fecha', OLD.fecha_compra, 'total', OLD.total,
+                     'id_cliente', OLD.id_cliente));
+END$$
+
+CREATE TRIGGER trg_auditoria_clientes_insert
+AFTER INSERT ON clientes
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro, DatosNuevos)
+    VALUES
+        (USER(), 'clientes', 'INSERT', NEW.id_cliente,
+         JSON_OBJECT('nombre', NEW.nombre, 'apellido', NEW.apellido,
+                     'email', NEW.email, 'telefono', NEW.telefono));
+END$$
+
+CREATE TRIGGER trg_auditoria_clientes_delete
+AFTER DELETE ON clientes
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro, DatosAnteriores)
+    VALUES
+        (USER(), 'clientes', 'DELETE', OLD.id_cliente,
+         JSON_OBJECT('nombre', OLD.nombre, 'apellido', OLD.apellido,
+                     'email', OLD.email, 'telefono', OLD.telefono));
+END$$
+
+CREATE TRIGGER trg_auditoria_detalle_insert
+AFTER INSERT ON detalle_compra
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro, DatosNuevos)
+    VALUES
+        (USER(), 'detalle_compra', 'INSERT', NEW.id_detalle,
+         JSON_OBJECT('compra', NEW.id_compra, 'producto', NEW.id_producto,
+                     'cantidad', NEW.cantidad, 'subtotal', NEW.subtotal));
+END$$
+
+CREATE TRIGGER trg_auditoria_detalle_update
+AFTER UPDATE ON detalle_compra
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro,
+         DatosAnteriores, DatosNuevos)
+    VALUES
+        (USER(), 'detalle_compra', 'UPDATE', NEW.id_detalle,
+         JSON_OBJECT('compra', OLD.id_compra, 'producto', OLD.id_producto,
+                     'cantidad', OLD.cantidad, 'subtotal', OLD.subtotal),
+         JSON_OBJECT('compra', NEW.id_compra, 'producto', NEW.id_producto,
+                     'cantidad', NEW.cantidad, 'subtotal', NEW.subtotal));
+END$$
+
+CREATE TRIGGER trg_auditoria_detalle_delete
+AFTER DELETE ON detalle_compra
+FOR EACH ROW
+BEGIN
+    INSERT INTO AuditoriaCambios
+        (UsuarioBD, TablaAfectada, Accion, ClaveRegistro, DatosAnteriores)
+    VALUES
+        (USER(), 'detalle_compra', 'DELETE', OLD.id_detalle,
+         JSON_OBJECT('compra', OLD.id_compra, 'producto', OLD.id_producto,
+                     'cantidad', OLD.cantidad, 'subtotal', OLD.subtotal));
+END$$
+
+DELIMITER ;
+
+
+/* =========================================================
+   CREACIÓN DE ROLES Y USUARIOS
+   ========================================================= */
+
+-- Roles de trabajo.
+CREATE ROLE IF NOT EXISTS
+    'rol_zonas'@'localhost',
+    'rol_stock'@'localhost',
+    'rol_gerente'@'localhost';
+
+-- 1. Administrador de zonas: consultar provincias, ciudades y vista pública.
+GRANT SELECT ON tienda.provincias TO 'rol_zonas'@'localhost';
+GRANT SELECT ON tienda.ciudades TO 'rol_zonas'@'localhost';
+GRANT SELECT ON biblioteca.vw_usuarios_publicos TO 'rol_zonas'@'localhost';
+
+-- 2. Operador de productos: consultar, agregar y modificar stock/precio.
+GRANT SELECT ON tienda.productos TO 'rol_stock'@'localhost';
+GRANT INSERT ON tienda.productos TO 'rol_stock'@'localhost';
+GRANT UPDATE (stock, precio) ON tienda.productos TO 'rol_stock'@'localhost';
+GRANT DELETE ON tienda.productos TO 'rol_stock'@'localhost';
+-- Aunque tiene permiso DELETE, el trigger solo permite borrar si stock = 0.
+
+-- 3. Gerente: administrar usuarios/clientes y compras.
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON tienda.clientes TO 'rol_gerente'@'localhost';
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON tienda.compras TO 'rol_gerente'@'localhost';
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON tienda.detalle_compra TO 'rol_gerente'@'localhost';
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON biblioteca.Usuarios TO 'rol_gerente'@'localhost';
+
+-- Crear cuentas de ejemplo. Cambiar las contraseñas al usarlo realmente.
+CREATE USER IF NOT EXISTS 'admin_zonas'@'localhost'
+    IDENTIFIED BY 'Cambiar_Clave_Zonas_123!';
+CREATE USER IF NOT EXISTS 'operador_stock'@'localhost'
+    IDENTIFIED BY 'Cambiar_Clave_Stock_123!';
+CREATE USER IF NOT EXISTS 'gerente'@'localhost'
+    IDENTIFIED BY 'Cambiar_Clave_Gerente_123!';
+
+GRANT 'rol_zonas'@'localhost' TO 'admin_zonas'@'localhost';
+GRANT 'rol_stock'@'localhost' TO 'operador_stock'@'localhost';
+GRANT 'rol_gerente'@'localhost' TO 'gerente'@'localhost';
+
+SET DEFAULT ROLE 'rol_zonas'@'localhost'
+    TO 'admin_zonas'@'localhost';
+SET DEFAULT ROLE 'rol_stock'@'localhost'
+    TO 'operador_stock'@'localhost';
+SET DEFAULT ROLE 'rol_gerente'@'localhost'
+    TO 'gerente'@'localhost';
+
+/* =========================================================
+   4. USUARIO 2: REVOCAR EL PERMISO DE ELIMINAR
+   ========================================================= */
+
+CREATE USER IF NOT EXISTS 'usuario2'@'localhost'
+    IDENTIFIED BY 'Cambiar_Clave_Usuario2_123!';
+
+-- Primero se simula que el usuario tenía permisos completos sobre tienda.
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON tienda.* TO 'usuario2'@'localhost';
+
+-- Ahora se le quita DELETE: conserva los demás permisos, pero no puede borrar.
+REVOKE DELETE ON tienda.* FROM 'usuario2'@'localhost';
+
+
+/* =========================================================
+   5 y 6. CIRCUITO LABORAL COMPLETO
+   Los roles agrupan permisos y se asignan a cada empleado/cuenta.
+   La auditoría registra el usuario conectado mediante USER().
+   ========================================================= */
+
+/*
