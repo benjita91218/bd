@@ -1,0 +1,450 @@
+/*
+RECUPERATORIO - PARTE 3: CICLOS DE REPETICIÓN
+MySQL 8.0. Ejecutar en la base biblioteca.
+*/
+
+USE biblioteca;
+
+DELIMITER $$
+
+
+
+/* 1. WHILE: mostrar los primeros N préstamos de un usuario. */
+
+CREATE PROCEDURE primeros_prestamos_usuario(
+    IN p_usuario_id INT,
+    IN p_n INT
+)
+BEGIN
+    DECLARE v_total INT DEFAULT 0;
+    DECLARE v_i INT DEFAULT 0;
+    DECLARE v_id INT;
+    DECLARE v_fecha DATE;
+    DECLARE v_titulo VARCHAR(255);
+
+    SELECT COUNT(*) INTO v_total
+    FROM Prestamos WHERE UsuarioID = p_usuario_id;
+
+    WHILE v_i < p_n AND v_i < v_total DO
+        SELECT pr.PrestamoID, pr.FechaPrestamo, l.Titulo
+        INTO v_id, v_fecha, v_titulo
+        FROM Prestamos pr
+        INNER JOIN Libros l ON pr.LibroID = l.LibroID
+        WHERE pr.UsuarioID = p_usuario_id
+        ORDER BY pr.PrestamoID
+        LIMIT v_i, 1;
+
+        SELECT v_id AS Prestamo, v_titulo AS Libro, v_fecha AS Fecha;
+        SET v_i = v_i + 1;
+    END WHILE;
+END$$
+
+
+
+
+
+/* 2. REPEAT: recorrer LibroID hasta encontrar "Harry Potter". */
+
+CREATE PROCEDURE buscar_harry_potter()
+BEGIN
+    DECLARE v_id INT DEFAULT 1;
+    DECLARE v_max INT DEFAULT 0;
+    DECLARE v_titulo VARCHAR(255) DEFAULT NULL;
+    DECLARE v_encontrado BOOLEAN DEFAULT FALSE;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_titulo = NULL;
+
+    SELECT COALESCE(MAX(LibroID), 0) INTO v_max FROM Libros;
+
+    REPEAT
+        SET v_titulo = NULL;
+
+        SELECT Titulo INTO v_titulo
+        FROM Libros
+        WHERE LibroID = v_id;
+
+        IF v_titulo LIKE '%Harry Potter%' THEN
+            SET v_encontrado = TRUE;
+            SELECT v_id AS LibroID, v_titulo AS Titulo;
+        END IF;
+
+        SET v_id = v_id + 1;
+    UNTIL v_encontrado = TRUE OR v_id > v_max
+    END REPEAT;
+END$$
+
+
+
+
+
+
+/* 3. LOOP: recorrer usuarios y mostrar cuántos préstamos tiene cada uno. */
+
+CREATE PROCEDURE prestamos_por_usuario()
+BEGIN
+    DECLARE v_id INT DEFAULT 0;
+    DECLARE v_nombre VARCHAR(255);
+    DECLARE v_cantidad INT DEFAULT 0;
+
+    etiquetas: LOOP
+        SELECT MIN(UsuarioID) INTO v_id
+        FROM Usuarios
+        WHERE UsuarioID > v_id;
+
+        IF v_id IS NULL THEN
+            LEAVE etiquetas;
+        END IF;
+
+        SELECT Nombre INTO v_nombre
+        FROM Usuarios WHERE UsuarioID = v_id;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM Prestamos WHERE UsuarioID = v_id
+        ) THEN
+            SET v_cantidad = 0;
+        ELSE
+            SELECT COUNT(*) INTO v_cantidad
+            FROM Prestamos WHERE UsuarioID = v_id;
+        END IF;
+
+        SELECT v_id AS UsuarioID, v_nombre AS Usuario,
+               v_cantidad AS CantidadPrestamos;
+    END LOOP;
+END$$
+
+
+
+
+
+
+
+
+/* 4. Función que determina si un libro es clásico.
+
+   Regla: más de 50 años y autor con más de 5 libros. */
+CREATE FUNCTION es_clasico(p_libro_id INT)
+RETURNS VARCHAR(15)
+READS SQL DATA
+BEGIN
+    DECLARE v_anio INT DEFAULT NULL;
+    DECLARE v_autor INT DEFAULT NULL;
+    DECLARE v_cantidad INT DEFAULT 0;
+
+    SELECT AnioPublicacion, AutorID
+    INTO v_anio, v_autor
+    FROM Libros
+    WHERE LibroID = p_libro_id
+    LIMIT 1;
+
+    SELECT COUNT(*) INTO v_cantidad
+    FROM Libros
+    WHERE AutorID = v_autor;
+
+    IF v_anio < YEAR(CURDATE()) - 50 AND v_cantidad > 5 THEN
+        RETURN 'CLASICO';
+    ELSE
+        RETURN 'NO CLASICO';
+    END IF;
+END$$
+
+/* Procedimiento WHILE que recorre todos los libros y los clasifica. */
+CREATE PROCEDURE clasificar_todos_los_libros()
+BEGIN
+    DECLARE v_id INT DEFAULT NULL;
+    DECLARE v_titulo VARCHAR(255);
+    DECLARE v_clasificacion VARCHAR(15);
+
+    SELECT MIN(LibroID) INTO v_id FROM Libros;
+
+    WHILE v_id IS NOT NULL DO
+        SELECT Titulo INTO v_titulo
+        FROM Libros WHERE LibroID = v_id;
+
+        SET v_clasificacion = es_clasico(v_id);
+
+        SELECT v_id AS LibroID, v_titulo AS Titulo,
+               v_clasificacion AS Clasificacion;
+
+        SELECT MIN(LibroID) INTO v_id
+        FROM Libros
+        WHERE LibroID > v_id;
+    END WHILE;
+END$$
+
+
+
+
+
+
+
+
+/* 5. Función cantidad_prestamos y LOOP para mostrar préstamos por libro. */
+
+CREATE FUNCTION cantidad_prestamos(p_libro_id INT)
+RETURNS INT
+READS SQL DATA
+BEGIN
+    DECLARE v_total INT DEFAULT 0;
+
+    SELECT COUNT(*) INTO v_total
+    FROM Prestamos
+    WHERE LibroID = p_libro_id;
+
+    RETURN v_total;
+END$$
+
+CREATE PROCEDURE prestamos_de_todos_los_libros()
+BEGIN
+    DECLARE v_id INT DEFAULT 0;
+    DECLARE v_titulo VARCHAR(255);
+    DECLARE v_total INT DEFAULT 0;
+
+    recorrer: LOOP
+        SELECT MIN(LibroID) INTO v_id
+        FROM Libros
+        WHERE LibroID > v_id;
+
+        IF v_id IS NULL THEN
+            LEAVE recorrer;
+        END IF;
+
+        SELECT Titulo INTO v_titulo
+        FROM Libros WHERE LibroID = v_id;
+
+        SET v_total = cantidad_prestamos(v_id);
+
+        SELECT v_titulo AS Libro, v_total AS Prestamos;
+    END LOOP;
+END$$
+
+
+
+
+
+
+
+/* 6. REPEAT + dias_prestamo: mostrar préstamos de más de 14 días.
+
+   Se define aquí con otro nombre para que esta entrega pueda ejecutarse sola. */
+CREATE FUNCTION duracion_prestamo(p_prestamo_id INT)
+RETURNS INT
+READS SQL DATA
+BEGIN
+    DECLARE v_dias INT DEFAULT NULL;
+
+    SELECT DATEDIFF(FechaDevolucion, FechaPrestamo)
+    INTO v_dias
+    FROM Prestamos
+    WHERE PrestamoID = p_prestamo_id
+    LIMIT 1;
+
+    RETURN v_dias;
+END$$
+
+CREATE PROCEDURE prestamos_mayores_a_14_dias()
+BEGIN
+    DECLARE v_id INT DEFAULT NULL;
+    DECLARE v_dias INT DEFAULT NULL;
+
+    SELECT MIN(PrestamoID) INTO v_id FROM Prestamos;
+
+    IF v_id IS NOT NULL THEN
+        REPEAT
+            SET v_dias = duracion_prestamo(v_id);
+
+            IF v_dias > 14 THEN
+                SELECT v_id AS PrestamoID, v_dias AS DiasPrestamo;
+            END IF;
+
+            SELECT MIN(PrestamoID) INTO v_id
+            FROM Prestamos
+            WHERE PrestamoID > v_id;
+        UNTIL v_id IS NULL
+        END REPEAT;
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+/* 7. LOOP + INSERT: crear un resumen con libro, autor y total de préstamos. */
+
+CREATE TABLE IF NOT EXISTS ResumenLibros (
+    ResumenID INT AUTO_INCREMENT PRIMARY KEY,
+    LibroID INT,
+    Titulo VARCHAR(255),
+    Autor VARCHAR(255),
+    CantidadPrestamos INT
+);
+
+CREATE PROCEDURE generar_resumen_libros()
+BEGIN
+    DECLARE v_id INT DEFAULT 0;
+    DECLARE v_titulo VARCHAR(255);
+    DECLARE v_autor VARCHAR(255);
+    DECLARE v_cantidad INT;
+
+    recorrer: LOOP
+        SELECT MIN(LibroID) INTO v_id
+        FROM Libros WHERE LibroID > v_id;
+
+        IF v_id IS NULL THEN
+            LEAVE recorrer;
+        END IF;
+
+        SELECT l.Titulo, a.Nombre
+        INTO v_titulo, v_autor
+        FROM Libros l
+        INNER JOIN Autores a ON l.AutorID = a.AutorID
+        WHERE l.LibroID = v_id;
+
+        SET v_cantidad = cantidad_prestamos(v_id);
+
+        INSERT INTO ResumenLibros
+            (LibroID, Titulo, Autor, CantidadPrestamos)
+        VALUES
+            (v_id, v_titulo, v_autor, v_cantidad);
+    END LOOP;
+END$$
+
+
+
+
+
+
+
+/* 8. WHILE + UPDATE: marcar como perdidos préstamos de más de 15 días.
+   La regla toma duración pactada (DATEDIFF) superior a 15 días. */
+
+CREATE PROCEDURE marcar_prestamos_largos_perdidos()
+BEGIN
+    DECLARE v_id INT DEFAULT NULL;
+    DECLARE v_dias INT DEFAULT 0;
+
+    SELECT MIN(PrestamoID) INTO v_id FROM Prestamos;
+
+    WHILE v_id IS NOT NULL DO
+        SELECT DATEDIFF(FechaDevolucion, FechaPrestamo)
+        INTO v_dias
+        FROM Prestamos
+        WHERE PrestamoID = v_id;
+
+        IF v_dias > 15 THEN
+            UPDATE Prestamos
+            SET Estado = 'PERDIDO'
+            WHERE PrestamoID = v_id;
+        END IF;
+
+        SELECT MIN(PrestamoID) INTO v_id
+        FROM Prestamos
+        WHERE PrestamoID > v_id;
+    END WHILE;
+END$$
+
+
+
+
+
+
+
+/* 9. Procedimiento analizar_libro y otro que llama a éste usando LOOP. */
+
+CREATE PROCEDURE analizar_libro(IN p_libro_id INT)
+BEGIN
+    SELECT
+        l.LibroID,
+        l.Titulo,
+        a.Nombre AS Autor,
+        (SELECT COUNT(*) FROM Prestamos p
+         WHERE p.LibroID = l.LibroID) AS CantidadPrestamos
+    FROM Libros l
+    INNER JOIN Autores a ON l.AutorID = a.AutorID
+    WHERE l.LibroID = p_libro_id;
+END$$
+
+CREATE PROCEDURE analizar_todos_los_libros()
+BEGIN
+    DECLARE v_id INT DEFAULT 0;
+
+    recorrer: LOOP
+        SELECT MIN(LibroID) INTO v_id
+        FROM Libros WHERE LibroID > v_id;
+
+        IF v_id IS NULL THEN
+            LEAVE recorrer;
+        END IF;
+
+        CALL analizar_libro(v_id);
+    END LOOP;
+END$$
+
+
+
+
+
+
+/* 10. Reporte por usuario.
+   Clasificación asumida: Nuevo = 0-1 préstamos; Frecuente = 2-5;
+   Muy frecuente = más de 5. Ajustar si el profesor dio otros límites. */
+
+
+CREATE TABLE IF NOT EXISTS ReporteUsuarios (
+    ReporteID INT AUTO_INCREMENT PRIMARY KEY,
+    UsuarioID INT,
+    Nombre VARCHAR(255),
+    CantidadPrestamos INT,
+    UltimoPrestamo DATE,
+    DuracionPromedio DECIMAL(10,2),
+    Clasificacion VARCHAR(30),
+    FechaGeneracion DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE PROCEDURE generar_reporte_biblioteca()
+BEGIN
+    DECLARE v_id INT DEFAULT 0;
+    DECLARE v_nombre VARCHAR(255);
+    DECLARE v_cantidad INT DEFAULT 0;
+    DECLARE v_ultimo DATE DEFAULT NULL;
+    DECLARE v_promedio DECIMAL(10,2) DEFAULT NULL;
+    DECLARE v_clasificacion VARCHAR(30);
+
+    DELETE FROM ReporteUsuarios;
+
+    recorrer: LOOP
+        SELECT MIN(UsuarioID) INTO v_id
+        FROM Usuarios WHERE UsuarioID > v_id;
+
+        IF v_id IS NULL THEN
+            LEAVE recorrer;
+        END IF;
+
+        SELECT Nombre INTO v_nombre
+        FROM Usuarios WHERE UsuarioID = v_id;
+
+        SELECT COUNT(*), MAX(FechaPrestamo),
+               AVG(DATEDIFF(FechaDevolucion, FechaPrestamo))
+        INTO v_cantidad, v_ultimo, v_promedio
+        FROM Prestamos
+        WHERE UsuarioID = v_id;
+
+        IF v_cantidad <= 1 THEN
+            SET v_clasificacion = 'Nuevo';
+        ELSEIF v_cantidad <= 5 THEN
+            SET v_clasificacion = 'Frecuente';
+        ELSE
+            SET v_clasificacion = 'Muy frecuente';
+        END IF;
+
+        INSERT INTO ReporteUsuarios
+            (UsuarioID, Nombre, CantidadPrestamos, UltimoPrestamo,
+             DuracionPromedio, Clasificacion)
+        VALUES
+            (v_id, v_nombre, v_cantidad, v_ultimo,
+             v_promedio, v_clasificacion);
+    END LOOP;
+END$$
+
+DELIMITER ;
