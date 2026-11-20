@@ -1,0 +1,342 @@
+DELIMITER $$
+
+-- 1. Recorrer clientes y poner en mayúscula la primera letra del nombre.
+
+CREATE PROCEDURE corregir_nombres_clientes()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_id INT;
+    DECLARE v_nombre VARCHAR(50);
+
+    DECLARE cur_clientes CURSOR FOR
+        SELECT id_cliente, nombre FROM clientes;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_clientes;
+
+    recorrer: LOOP
+        FETCH cur_clientes INTO v_id, v_nombre;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        UPDATE clientes
+        SET nombre = CONCAT(
+            UPPER(LEFT(TRIM(v_nombre), 1)),
+            SUBSTRING(TRIM(v_nombre), 2)
+        )
+        WHERE id_cliente = v_id;
+    END LOOP;
+
+    CLOSE cur_clientes;
+END$$
+
+
+
+
+
+
+
+
+
+-- 2. Subtotal de población por región y ranking de provincias.
+-- Requiere provincias.region y provincias.poblacion.
+
+CREATE TABLE IF NOT EXISTS RankingProvincias (
+    Puesto INT,
+    Provincia VARCHAR(50),
+    Region VARCHAR(50),
+    Poblacion BIGINT
+);
+
+CREATE PROCEDURE subtotal_y_ranking_regiones()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_provincia VARCHAR(50);
+    DECLARE v_region VARCHAR(50);
+    DECLARE v_poblacion BIGINT;
+    DECLARE v_region_actual VARCHAR(50) DEFAULT NULL;
+    DECLARE v_subtotal BIGINT DEFAULT 0;
+    DECLARE v_puesto INT DEFAULT 0;
+
+    DECLARE cur_poblacion CURSOR FOR
+        SELECT nombre_provincia, region, poblacion
+        FROM provincias
+        ORDER BY region, nombre_provincia;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_poblacion;
+
+    recorrer: LOOP
+        FETCH cur_poblacion INTO v_provincia, v_region, v_poblacion;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        IF v_region_actual IS NULL THEN
+            SET v_region_actual = v_region;
+        ELSEIF v_region <> v_region_actual THEN
+            SELECT v_region_actual AS Region,
+                   v_subtotal AS PoblacionTotalRegion;
+            SET v_region_actual = v_region;
+            SET v_subtotal = 0;
+        END IF;
+
+        SET v_subtotal = v_subtotal + COALESCE(v_poblacion, 0);
+    END LOOP;
+
+    CLOSE cur_poblacion;
+
+    IF v_region_actual IS NOT NULL THEN
+        SELECT v_region_actual AS Region,
+               v_subtotal AS PoblacionTotalRegion;
+    END IF;
+
+    DELETE FROM RankingProvincias;
+
+    INSERT INTO RankingProvincias (Puesto, Provincia, Region, Poblacion)
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY poblacion DESC),
+        nombre_provincia,
+        region,
+        poblacion
+    FROM provincias;
+
+    SELECT * FROM RankingProvincias ORDER BY Puesto;
+END$$
+
+
+
+
+
+
+-- 3. Reponer 20 unidades si stock < 5 y guardar auditoría.
+
+CREATE TABLE IF NOT EXISTS AuditoriaStock (
+    AuditoriaID INT AUTO_INCREMENT PRIMARY KEY,
+    ProductoID INT,
+    NombreProducto VARCHAR(50),
+    StockAnterior INT,
+    StockNuevo INT,
+    Fecha DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE PROCEDURE reponer_stock_y_auditar()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_id INT;
+    DECLARE v_nombre VARCHAR(50);
+    DECLARE v_stock INT;
+
+    DECLARE cur_productos CURSOR FOR
+        SELECT id_producto, nombre_producto, stock FROM productos;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_productos;
+
+    recorrer: LOOP
+        FETCH cur_productos INTO v_id, v_nombre, v_stock;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        IF v_stock < 5 THEN
+            UPDATE productos
+            SET stock = stock + 20
+            WHERE id_producto = v_id;
+
+            INSERT INTO AuditoriaStock
+                (ProductoID, NombreProducto, StockAnterior, StockNuevo)
+            VALUES
+                (v_id, v_nombre, v_stock, v_stock + 20);
+
+            SELECT CONCAT('Se repuso el producto: ', v_nombre) AS Mensaje;
+        END IF;
+    END LOOP;
+
+    CLOSE cur_productos;
+END$$
+
+
+
+
+
+
+
+
+
+
+- 4. Funciones para compras y dinero gastado por cliente.
+CREATE FUNCTION cantidad_compras_cliente(p_id_cliente INT)
+RETURNS INT
+READS SQL DATA
+BEGIN
+    DECLARE v_cantidad INT DEFAULT 0;
+    SELECT COUNT(*) INTO v_cantidad
+    FROM compras WHERE id_cliente = p_id_cliente;
+    RETURN v_cantidad;
+
+
+
+
+CREATE FUNCTION dinero_gastado_cliente(p_id_cliente INT)
+RETURNS DECIMAL(12,2)
+READS SQL DATA
+BEGIN
+    DECLARE v_total DECIMAL(12,2) DEFAULT 0;
+    SELECT COALESCE(SUM(total), 0) INTO v_total
+    FROM compras WHERE id_cliente = p_id_cliente;
+    RETURN v_total;
+END$$
+
+CREATE FUNCTION dinero_gastado_cliente(p_id_cliente INT)
+RETURNS DECIMAL(12,2)
+READS SQL DATA
+BEGIN
+    DECLARE v_total DECIMAL(12,2) DEFAULT 0;
+    SELECT COALESCE(SUM(total), 0) INTO v_total
+    FROM compras WHERE id_cliente = p_id_cliente;
+    RETURN v_total;
+END$$
+
+-- Por ciudad muestra el cliente con más compras y el que más dinero gastó.
+CREATE PROCEDURE clientes_favoritos_por_ciudad()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_id_cliente INT;
+    DECLARE v_nombre VARCHAR(50);
+    DECLARE v_apellido VARCHAR(50);
+    DECLARE v_ciudad_id INT;
+    DECLARE v_ciudad VARCHAR(50);
+    DECLARE v_ciudad_actual INT DEFAULT NULL;
+    DECLARE v_nombre_ciudad VARCHAR(50);
+    DECLARE v_compras INT;
+    DECLARE v_gastado DECIMAL(12,2);
+    DECLARE v_mejor_compras INT DEFAULT -1;
+    DECLARE v_mejor_gasto DECIMAL(12,2) DEFAULT -1;
+    DECLARE v_cliente_compras VARCHAR(110);
+    DECLARE v_cliente_gasto VARCHAR(110);
+
+    DECLARE cur_clientes CURSOR FOR
+        SELECT cl.id_cliente, cl.nombre, cl.apellido,
+               ci.id_ciudad, ci.nombre_ciudad
+ FROM clientes cl
+        INNER JOIN ciudades ci ON cl.id_ciudad = ci.id_ciudad
+        ORDER BY ci.id_ciudad, cl.id_cliente;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_clientes;
+
+    recorrer: LOOP
+        FETCH cur_clientes INTO
+            v_id_cliente, v_nombre, v_apellido, v_ciudad_id, v_ciudad;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        IF v_ciudad_actual IS NULL THEN
+            SET v_ciudad_actual = v_ciudad_id;
+            SET v_nombre_ciudad = v_ciudad;
+        ELSEIF v_ciudad_id <> v_ciudad_actual THEN
+            SELECT v_nombre_ciudad AS Ciudad,
+                   v_cliente_compras AS ClienteConMasCompras,
+                   v_mejor_compras AS CantidadCompras,
+                   v_cliente_gasto AS ClienteQueMasGasto,
+                   v_mejor_gasto AS DineroGastado;
+
+            SET v_ciudad_actual = v_ciudad_id;
+            SET v_nombre_ciudad = v_ciudad;
+            SET v_mejor_compras = -1;
+            SET v_mejor_gasto = -1;
+            SET v_cliente_compras = NULL;
+            SET v_cliente_gasto = NULL;
+        END IF;
+
+        SET v_compras = cantidad_compras_cliente(v_id_cliente);
+        SET v_gastado = dinero_gastado_cliente(v_id_cliente);
+
+        IF v_compras > v_mejor_compras THEN
+            SET v_mejor_compras = v_compras;
+            SET v_cliente_compras = CONCAT(v_nombre, ' ', v_apellido);
+        END IF;
+
+        IF v_gastado > v_mejor_gasto THEN
+            SET v_mejor_gasto = v_gastado;
+            SET v_cliente_gasto = CONCAT(v_nombre, ' ', v_apellido);
+        END IF;
+    END LOOP;
+
+    CLOSE cur_clientes;
+
+    IF v_ciudad_actual IS NOT NULL THEN
+        SELECT v_nombre_ciudad AS Ciudad,
+               v_cliente_compras AS ClienteConMasCompras,
+               v_mejor_compras AS CantidadCompras,
+               v_cliente_gasto AS ClienteQueMasGasto,
+               v_mejor_gasto AS DineroGastado;
+    END IF;
+END$$
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- 5. Recorrer provincias/clientes y mostrar dinero gastado por cliente.
+CREATE PROCEDURE informacion_clientes_por_provincia()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_provincia VARCHAR(50);
+    DECLARE v_ciudad VARCHAR(50);
+    DECLARE v_nombre VARCHAR(50);
+    DECLARE v_apellido VARCHAR(50);
+    DECLARE v_id_cliente INT;
+    DECLARE v_gastado DECIMAL(12,2);
+
+    DECLARE cur_info CURSOR FOR
+        SELECT pr.nombre_provincia, ci.nombre_ciudad,
+               cl.id_cliente, cl.nombre, cl.apellido
+        FROM provincias pr
+        INNER JOIN ciudades ci ON pr.id_provincia = ci.id_provincia
+        INNER JOIN clientes cl ON ci.id_ciudad = cl.id_ciudad
+        ORDER BY pr.nombre_provincia, ci.nombre_ciudad, cl.apellido;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_info;
+
+    recorrer: LOOP
+        FETCH cur_info INTO
+            v_provincia, v_ciudad, v_id_cliente, v_nombre, v_apellido;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        SET v_gastado = dinero_gastado_cliente(v_id_cliente);
+
+        SELECT v_provincia AS Provincia,
+               v_ciudad AS Ciudad,
+               CONCAT(v_nombre, ' ', v_apellido) AS Cliente,
+               v_gastado AS DineroGastado;
+    END LOOP;
+
+    CLOSE cur_info;
+END$$
+
+DELIMITER ;
