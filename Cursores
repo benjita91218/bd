@@ -1,0 +1,331 @@
+/*
+RECUPERATORIO - PARTE 4: CURSORES
+*/
+
+USE tienda;
+
+/* =========================================================
+   CURSORES (31/8)
+   ========================================================= */
+DELIMITER $$
+
+
+-- 1. Recorrer y mostrar todos los productos.
+
+CREATE PROCEDURE listar_productos()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_id INT;
+    DECLARE v_nombre VARCHAR(50);
+    DECLARE v_precio DECIMAL(10,2);
+    DECLARE v_stock INT;
+
+    DECLARE cur_productos CURSOR FOR
+        SELECT id_producto, nombre_producto, precio, stock
+        FROM productos
+        ORDER BY id_producto;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_productos;
+
+    recorrer: LOOP
+        FETCH cur_productos INTO v_id, v_nombre, v_precio, v_stock;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        SELECT v_id AS ProductoID, v_nombre AS Producto,
+               v_precio AS Precio, v_stock AS Stock;
+    END LOOP;
+
+    CLOSE cur_productos;
+END$$
+
+
+
+
+
+-- 2. Recorrer provincias y mostrar provincia, capital y población.
+
+CREATE PROCEDURE listar_provincias()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_nombre VARCHAR(50);
+    DECLARE v_capital VARCHAR(80);
+    DECLARE v_poblacion BIGINT;
+
+    DECLARE cur_provincias CURSOR FOR
+        SELECT nombre_provincia, capital, poblacion
+        FROM provincias
+        ORDER BY nombre_provincia;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_provincias;
+
+    recorrer: LOOP
+        FETCH cur_provincias INTO v_nombre, v_capital, v_poblacion;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        SELECT CONCAT(
+            'Provincia: ', v_nombre,
+            ' | Capital: ', COALESCE(v_capital, 'Sin dato'),
+            ' | Población: ', COALESCE(v_poblacion, 0)
+        ) AS Resultado;
+    END LOOP;
+
+    CLOSE cur_provincias;
+END$$
+
+
+
+
+
+-- 3. Mostrar únicamente productos sin stock.
+
+CREATE PROCEDURE listar_productos_sin_stock()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_id INT;
+    DECLARE v_nombre VARCHAR(50);
+    DECLARE v_stock INT;
+
+    DECLARE cur_sin_stock CURSOR FOR
+        SELECT id_producto, nombre_producto, stock
+        FROM productos
+        WHERE stock = 0
+        ORDER BY id_producto;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_sin_stock;
+
+    recorrer: LOOP
+        FETCH cur_sin_stock INTO v_id, v_nombre, v_stock;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        SELECT v_id AS ProductoID, v_nombre AS Producto,
+               'SIN STOCK' AS Estado;
+    END LOOP;
+
+    CLOSE cur_sin_stock;
+END$$
+
+
+
+
+
+-- 4. Clasificar productos según su precio.
+
+CREATE PROCEDURE clasificar_productos()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_nombre VARCHAR(50);
+    DECLARE v_precio DECIMAL(10,2);
+    DECLARE v_categoria VARCHAR(20);
+
+    DECLARE cur_clasificar CURSOR FOR
+        SELECT nombre_producto, precio FROM productos
+        ORDER BY id_producto;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_clasificar;
+
+    recorrer: LOOP
+        FETCH cur_clasificar INTO v_nombre, v_precio;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        IF v_precio < 10000 THEN
+            SET v_categoria = 'BARATO';
+        ELSEIF v_precio <= 50000 THEN
+            SET v_categoria = 'MEDIO';
+        ELSE
+            SET v_categoria = 'CARO';
+        END IF;
+
+        SELECT v_nombre AS Producto, v_precio AS Precio,
+               v_categoria AS Categoria;
+    END LOOP;
+
+    CLOSE cur_clasificar;
+END$$
+
+
+
+
+
+-- 5. Calcular el valor del stock: precio * stock, subtotal y total.
+
+CREATE PROCEDURE valor_stock()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_nombre VARCHAR(50);
+    DECLARE v_precio DECIMAL(10,2);
+    DECLARE v_stock INT;
+    DECLARE v_subtotal DECIMAL(12,2);
+    DECLARE v_total DECIMAL(14,2) DEFAULT 0;
+
+    DECLARE cur_stock CURSOR FOR
+        SELECT nombre_producto, precio, stock FROM productos;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_stock;
+
+    recorrer: LOOP
+        FETCH cur_stock INTO v_nombre, v_precio, v_stock;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        SET v_subtotal = v_precio * v_stock;
+        SET v_total = v_total + v_subtotal;
+
+        SELECT v_nombre AS Producto, v_subtotal AS ValorStockProducto;
+    END LOOP;
+
+    CLOSE cur_stock;
+
+    SELECT v_total AS ValorTotalInventario;
+END$$
+
+
+
+
+
+-- 6. Aumentar 20% si el precio es menor a 10.000; si no, 10%.
+
+CREATE PROCEDURE aumentar_precios_cursor()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_id INT;
+    DECLARE v_precio DECIMAL(10,2);
+
+    DECLARE cur_precios CURSOR FOR
+        SELECT id_producto, precio FROM productos ORDER BY id_producto;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_precios;
+
+    recorrer: LOOP
+        FETCH cur_precios INTO v_id, v_precio;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        IF v_precio < 10000 THEN
+            UPDATE productos SET precio = precio * 1.20
+            WHERE id_producto = v_id;
+        ELSE
+            UPDATE productos SET precio = precio * 1.10
+            WHERE id_producto = v_id;
+        END IF;
+    END LOOP;
+
+    CLOSE cur_precios;
+END$$
+
+
+
+
+
+-- 7. Actualizar stock según su valor actual.
+
+CREATE PROCEDURE actualizar_stock_cursor()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_id INT;
+    DECLARE v_stock INT;
+
+    DECLARE cur_stock CURSOR FOR
+        SELECT id_producto, stock FROM productos ORDER BY id_producto;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_stock;
+
+    recorrer: LOOP
+        FETCH cur_stock INTO v_id, v_stock;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        IF v_stock < 5 THEN
+            UPDATE productos SET stock = stock + 10
+            WHERE id_producto = v_id;
+        ELSEIF v_stock < 20 THEN
+            UPDATE productos SET stock = stock + 5
+            WHERE id_producto = v_id;
+        END IF;
+    END LOOP;
+
+    CLOSE cur_stock;
+END$$
+
+
+
+
+
+-- 8. Recorrer compras y mostrar cliente, producto, cantidad y fecha.
+-- Una compra con varios productos genera una fila por cada detalle.
+
+CREATE PROCEDURE listar_compras_cursor()
+BEGIN
+    DECLARE v_fin BOOLEAN DEFAULT FALSE;
+    DECLARE v_id_compra INT;
+    DECLARE v_cliente VARCHAR(110);
+    DECLARE v_producto VARCHAR(50);
+    DECLARE v_cantidad INT;
+    DECLARE v_fecha DATETIME;
+
+    DECLARE cur_compras CURSOR FOR
+        SELECT co.id_compra,
+               CONCAT(cl.nombre, ' ', cl.apellido),
+               p.nombre_producto,
+               dc.cantidad,
+               co.fecha_compra
+        FROM compras co
+        INNER JOIN clientes cl ON co.id_cliente = cl.id_cliente
+        INNER JOIN detalle_compra dc ON co.id_compra = dc.id_compra
+        INNER JOIN productos p ON dc.id_producto = p.id_producto
+        ORDER BY co.id_compra, p.id_producto;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fin = TRUE;
+
+    OPEN cur_compras;
+
+    recorrer: LOOP
+        FETCH cur_compras INTO
+            v_id_compra, v_cliente, v_producto, v_cantidad, v_fecha;
+
+        IF v_fin THEN
+            LEAVE recorrer;
+        END IF;
+
+        SELECT CONCAT('Compra #', v_id_compra) AS Compra,
+               v_cliente AS Cliente,
+               v_producto AS Producto,
+               v_cantidad AS Cantidad,
+               v_fecha AS Fecha;
+    END LOOP;
+
+    CLOSE cur_compras;
+END$$
+
+DELIMITER ;
