@@ -1,0 +1,129 @@
+3. Ejemplares
+Agregar una tabla Ejemplares, ya que un libro puede tener varios ejemplares físicos.
+Cada ejemplar tendrá un estado: DISPONIBLE, PRESTADO, DANADO o PERDIDO.
+Crear los  para controlar que:
+3.1 Solo puedan prestarse ejemplares disponibles.
+3.2 Al prestar, pase a PRESTADO.
+3.3 Al devolver, vuelva a DISPONIBLE.
+No se eliminen libros que tengan ejemplares.
+No se eliminen ejemplares con préstamos históricos.
+
+
+
+3.1
+USE biblioteca;
+
+DELIMITER //
+CREATE TRIGGER verificar_disponibilidad
+BEFORE INSERT on prestamos
+for EACH ROW
+BEGIN
+
+DECLARE v_estado varchar(30);
+
+SELECT estado into v_estado FROM Ejemplares WHERE EjemplarID = NEW.EjemplarID;
+
+if v_estado is null or != "disponible" THEN 
+SIGNAL SQLSTATE "45000" SET MESSAGE_TEXT = "Solo pueden prestarse ejemplares disponibles" ;  
+END IF;
+
+END //
+DELIMITER ;
+
+
+
+
+3.2
+use biblioteca;
+DELIMITER //
+CREATE TRIGGER actualizar_estado
+AFTER INSERT on prestamos
+for each ROW
+BEGIN
+
+UPDATE ejemplares set estado = "prestado" WHERE EjemplarID=new.EjemplarID;
+
+END //
+DELIMITER ;
+
+
+
+
+
+3.3
+use biblioteca;
+DELIMITER //
+CREATE TRIGGER estado_devolucion
+AFTER UPDATE on prestamos
+for each ROW
+BEGIN
+
+IF OLD.FechaDevolucionReal IS NULL AND NEW.FechaDevolucionReal IS NOT NULL THEN
+UPDATE ejemplares set estado = "disponible" WHERE EjemplarID=new.EjemplarID;
+END IF;
+
+END //
+DELIMITER ;
+
+
+
+
+
+
+3.4
+use biblioteca;
+delimiter //
+create trigger eliminar_libros
+BEFORE DELETE on libros
+FOR EACH ROW
+BEGIN
+
+DECLARE v_cantidad int;
+
+SELECT COUNT(*)INTO v_cantidad FROM ejemplares WHERE LibroID = old.LibroID;
+
+IF v_cantidad > 0 THEN
+SIGNAL SQLSTATE "45000"
+SET MESSAGE_TEXT = "El libro tiene ejemplares y no se puede eliminar";
+END IF;
+
+END //
+delimiter ;
+
+
+
+
+3.5
+use biblioteca;
+delimiter //
+CREATE TRIGGER ejemplares_historicos
+BEFORE DELETE on ejemplares
+FOR EACH ROW
+BEGIN
+
+DECLARE v_cantidad int;
+
+SELECT COUNT(*) into v_cantidad from prestamos WHERE EjemplarID=old.EjemplarID ;
+
+IF v_cantidad > 0 THEN
+SIGNAL SQLSTATE "45000"
+SET MESSAGE_TEXT = "No se puede eliminar un ejemplar con historial de prestamos";
+END IF;
+
+END //
+DELIMITER ;
+
+
+
+
+
+4. Multas
+Agregar las tablas Multas
+
+CREATE TABLE Multas (MultaID INT AUTO_INCREMENT, PrestamoID INT NOT NULL, FechaGeneracion DATE NOT NULL, DiasRetraso INT NOT NULL,
+Monto DECIMAL(10,2) NOT NULL, Estado ENUM('PENDIENTE', 'PAGADA') DEFAULT 'PENDIENTE', PRIMARY KEY (MultaID), UNIQUE (PrestamoID), 
+FOREIGN KEY (PrestamoID) REFERENCES Prestamos(PrestamoID));
+
+Una devolución atrasada deberá generar automáticamente una multa. (mediante una funcion)
+
+
