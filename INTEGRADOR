@@ -127,3 +127,218 @@ FOREIGN KEY (PrestamoID) REFERENCES Prestamos(PrestamoID));
 Una devolución atrasada deberá generar automáticamente una multa. (mediante una funcion)
 
 
+use biblioteca;
+DELIMITER //
+
+CREATE FUNCTION dias_de_atraso(FechaPrevista_devolucion DATE, FechaDevolucion_real DATE)
+RETURNS INT
+DETERMINISTIC
+BEGIN
+
+datediff(FechaDevolucion_real, FechaPrevista_devolucion);
+
+IF DATEDIFF(FechaDevolucion_real, FechaPrevista_devolucion) >= 0 THEN
+    RETURN DATEDIFF(FechaDevolucion_real, FechaPrevista_devolucion);
+ELSE
+    RETURN 0;
+END IF;
+
+end //
+delimiter ;
+
+DELIMITER //
+CREATE TRIGGER generar_multa
+after update on prestamos
+FOR EACH ROW
+BEGIN
+
+DECLARE v_dias int;
+
+IF OLD.FechaDevolucionReal IS NULL
+AND NEW.FechaDevolucionReal IS NOT NULL THEN
+
+SELECT dias_de_atraso(new.FechaDevolucion,new.FechaDevolucionReal) INTO v_dias;
+
+IF v_dias > 0 THEN
+
+INSERT INTO Multas (PrestamoID, FechaGeneracion, diasRetraso,Monto)
+VALUES (NEW.PrestamoID, CURDATE(), v_dias, v_dias * 500);
+
+end IF;
+END IF;
+
+END //
+delimiter ;
+
+
+
+5. Procedimiento
+Crear un procedimiento RegistrarPrestamo que reciba un usuario y un ejemplar.
+Deberá verificar que:
+Existan ambos registros.
+El ejemplar esté disponible.
+El usuario tenga menos de 3 préstamos activos.
+No posea multas pendientes.
+todo esto mediante funciones y deberá registrar el préstamo, actualizar el estado del ejemplar
+
+
+
+
+1. Función para comprobar si existe el usuario
+
+DELIMITER //
+
+CREATE FUNCTION usuario_existe(p_usuario_id INT)
+RETURNS INT
+BEGIN
+
+    DECLARE v_cantidad INT;
+
+    SELECT COUNT(*) INTO v_cantidad FROM Usuarios WHERE UsuarioID = p_usuario_id;
+
+IF v_cantidad > 0 THEN
+    RETURN 1;
+ELSE
+    RETURN 0;
+END IF;
+
+END //
+
+
+
+2. Función para comprobar si existe el ejemplar
+
+CREATE FUNCTION ejemplar_existe(p_ejemplar_id INT)
+RETURNS INT
+BEGIN
+
+DECLARE v_cantidad INT;
+
+SELECT COUNT(*) INTO v_cantidad FROM Ejemplares WHERE ejemplar_id = p_ejemplar_id;
+
+IF v_cantidad > 0 THEN
+    RETURN 1;
+ELSE
+    RETURN 0;
+END IF;
+
+END //
+
+
+
+
+3. Función para comprobar si está disponible
+
+CREATE FUNCTION ejemplar_disponible(p_ejemplar_id INT)
+RETURNS INT
+BEGIN
+
+DECLARE v_cantidad INT;
+
+SELECT COUNT(*) INTO v_cantidad FROM Ejemplares WHERE ejemplar_id = p_ejemplar_id AND estado = 'disponible';
+
+IF v_cantidad > 0 THEN
+    RETURN 1;
+ELSE
+    RETURN 0;
+END IF;
+
+END //
+
+
+
+4. Función para contar préstamos activos
+
+CREATE FUNCTION prestamos_activos(p_usuario_id INT)
+RETURNS INT
+BEGIN
+
+DECLARE v_cantidad INT;
+
+SELECT COUNT(*) INTO v_cantidad FROM Prestamos WHERE UsuarioID = p_usuario_id AND FechaDevolucionReal IS NULL;
+
+RETURN v_cantidad;
+
+END //
+
+
+
+5. Función para comprobar multas pendientes
+
+CREATE FUNCTION multas_pendientes(p_usuario_id INT)
+RETURNS INT
+BEGIN
+
+DECLARE v_cantidad INT;
+
+SELECT COUNT(*) INTO v_cantidad FROM Multas m INNER JOIN Prestamos p ON m.PrestamoID = p.PrestamoID WHERE p.UsuarioID = p_usuario_id 
+AND m.Estado = 'PENDIENTE';
+
+IF v_cantidad > 0 THEN
+    RETURN 1;
+ELSE
+    RETURN 0;
+END IF;
+
+END //
+
+
+
+6. Procedimiento principal: RegistrarPrestamo
+CREATE PROCEDURE RegistrarPrestamo(IN p_usuario_id INT, IN p_ejemplar_id INT)
+BEGIN
+
+    -- 1. Comprobar que exista el usuario.
+
+IF usuario_existe(p_usuario_id) = 0 THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El usuario no existe';
+
+    -- 2. Comprobar que exista el ejemplar.
+
+ELSEIF ejemplar_existe(p_ejemplar_id) = 0 THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El ejemplar no existe';
+
+    -- 3. Comprobar disponibilidad.
+
+ELSEIF ejemplar_disponible(p_ejemplar_id) = 0 THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El ejemplar no esta disponible';
+
+    -- 4. Comprobar cantidad de prestamos activos.
+
+ELSEIF prestamos_activos(p_usuario_id) >= 3 THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El usuario tiene tres prestamos activos';
+
+    -- 5. Comprobar multas pendientes.
+
+ELSEIF multas_pendientes(p_usuario_id) = 1 THEN
+SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'El usuario tiene multas pendientes';
+
+    -- 6. Si todo esta correcto, registrar el prestamo.
+
+ELSE
+INSERT INTO Prestamos (UsuarioID, ejemplar_id, FechaPrestamo, FechaDevolucion)
+VALUES (p_usuario_id, p_ejemplar_id, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 14 DAY));
+
+END IF;
+
+END //
+
+DELIMITER ;
+
+
+
+
+
+
+
+6. Cursores
+Crear un procedimiento que reciba  y utilice un  para recorrer los usuarios que realizaron préstamos durante ese período.
+Para cada usuario deberá calcular:
+Cantidad de préstamos realizados.
+Cantidad de préstamos activos.
+Cantidad de devoluciones atrasadas.
+Cantidad total de días de atraso.
+Importe total de multas generadas.
+
+
+
