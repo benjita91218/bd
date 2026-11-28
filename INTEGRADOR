@@ -1,3 +1,79 @@
+1. Administrador
+Crear un rol  que pueda:
+Consultar y modificar autores, géneros y libros.
+Gestionar ejemplares.
+Consultar usuarios y préstamos.
+Administrar multas y reservas.
+Crear una  que oculte información sensible.
+
+
+
+
+CREATE role "administrador";
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON biblioteca.Autores
+TO "administrador";
+GRANT SELECT, INSERT, UPDATE, DELETE ON biblioteca.generos
+TO "administrador";
+GRANT SELECT, INSERT, UPDATE, DELETE ON biblioteca.libros
+to "administrador";
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON biblioteca.ejemplares
+TO "administrador";
+
+GRANT SELECT ON biblioteca.usuarios
+TO "administrador";
+GRANT SELECT ON biblioteca.prestamos
+to "administrador";
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON biblioteca.multas
+TO "administrador";
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON biblioteca.reservas
+TO "administrador";
+
+CREATE VIEW informacion_sensible AS SELECT usuarioID, nombre, gmail from usuarios;
+
+
+
+
+
+2. Bibliotecario
+Crear un rol  que pueda:
+Consultar libros, ejemplares y usuarios.
+Registrar préstamos y devoluciones.
+Registrar y consultar reservas.
+Consultar multas.
+No podrá eliminar libros, usuarios ni modificar directamente el estado de los ejemplares.
+Un usuario no podrá tener más de  ni solicitar préstamos si posee multas pendientes.
+
+
+
+
+CREATE role "bibliotecario";
+GRANT SELECT ON biblioteca.Libros
+TO "bibliotecario";
+GRANT SELECT ON biblioteca.ejemplares 
+TO "bibliotecario";
+GRANT SELECT ON biblioteca.usuarios
+TO "bibliotecario";
+GRANT SELECT ON biblioteca.multas
+TO "bibliotecario";
+GRANT SELECT ON biblioteca.reservas
+TO "bibliotecario";
+
+GRANT INSERT ON biblioteca.reservas
+TO "bibliotecario";
+
+GRANT EXECUTE on PROCEDURE biblioteca.RegistrarPrestamo
+TO "bibliotecario";
+
+GRANT EXECUTE ON PROCEDURE biblioteca.RegistrarDevolucion
+TO "bibliotecario";
+
+
+
+
 3. Ejemplares
 Agregar una tabla Ejemplares, ya que un libro puede tener varios ejemplares físicos.
 Cada ejemplar tendrá un estado: DISPONIBLE, PRESTADO, DANADO o PERDIDO.
@@ -342,3 +418,53 @@ Importe total de multas generadas.
 
 
 
+
+USE biblioteca;
+
+DELIMITER //
+
+CREATE PROCEDURE reporte_prestamos_periodo(IN p_fecha_inicio DATE, IN p_fecha_fin DATE)
+BEGIN
+
+DECLARE v_usuario_id INT;
+DECLARE v_fin INT DEFAULT 0;
+    
+DECLARE v_total_prestamos INT;
+DECLARE v_prestamos_activos INT;
+DECLARE v_devoluciones_atrasadas INT;
+DECLARE v_dias_de_atraso INT;
+DECLARE v_total_multas DECIMAL(10,2);
+
+    DECLARE cur_usuarios CURSOR FOR
+        SELECT DISTINCT UsuarioID FROM Prestamos WHERE FechaPrestamo BETWEEN p_fecha_inicio AND p_fecha_fin;
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND
+        SET v_fin = 1;
+
+OPEN cur_usuarios;
+
+
+bucle: LOOP
+
+ FETCH cur_usuarios INTO v_usuario_id;
+
+ IF v_fin = 1 THEN LEAVE bucle;
+ END IF;
+ 
+ SELECT COUNT(*) into v_total_prestamos FROM prestamos WHERE usuario_id=v_usuario_id and fecha_prestamo BETWEEN fecha_inicio AND fecha_fin;
+ 
+ SELECT COUNT(*) INTO v_prestamos_activos FROM prestamos WHERE usuario_id = v_usuario_id AND FechaDevolucionReal IS NULL and fecha_prestamo BETWEEN fecha_inicio AND fecha_fin;
+
+SELECT COUNT(*) into v_devoluciones_atrasadas from prestamos WHERE usuario_id=v_usuario_id AND FechaPrestamo BETWEEN p_fecha_inicio AND p_fecha_fin and FechaDevolucionReal > FechaDevolucion;
+
+SELECT SUM(dias_de_atraso(FechaDevolucion, FechaDevolucionReal)) INTO v_dias_de_atraso FROM Prestamos WHERE UsuarioID = v_usuario_id AND FechaPrestamo BETWEEN p_fecha_inicio AND p_fecha_fin AND FechaDevolucionReal > FechaDevolucion;
+
+SELECT SUM(m.monto) into v_total_multas from multas m inner JOIN prestamos p on m.prestamoID = p.prestamoID WHERE usuario_id=v_usuario_id AND p.FechaPrestamo BETWEEN p_fecha_inicio AND p_fecha_fin;
+
+END LOOP;
+
+    CLOSE cur_usuarios;
+
+END //
+
+DELIMITER ;
